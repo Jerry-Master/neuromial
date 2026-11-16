@@ -3,10 +3,9 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import {
   DynamoDBDocumentClient,
   GetCommand,
-  PutCommand,
   QueryCommand,
   ScanCommand,
-  UpdateCommand,
+  TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb'
 import { checkAnswer, dayString, epochDay, nextStreak, pointsFor, publicQuestion, questionIdForDay } from './logic.ts'
 import { getData } from './data.ts'
@@ -76,38 +75,45 @@ export async function answerScored(event: Event): Promise<APIGatewayProxyResultV
   const streak = nextStreak(user?.lastDay, v.today, user?.streak ?? 0)
   const points = pointsFor(v.result.correct, user?.lastDay === v.today - 1 ? user.streak : 0)
 
+  // one atomic write: record the answer (once per day) and update totals together
   try {
     await db.send(
-      new PutCommand({
-        TableName: ANSWERS,
-        Item: { userId, day, choice: v.choice, correct: v.result.correct, points },
-        ConditionExpression: 'attribute_not_exists(userId)',
+      new TransactWriteCommand({
+        TransactItems: [
+          {
+            Put: {
+              TableName: ANSWERS,
+              Item: { userId, day, choice: v.choice, correct: v.result.correct, points },
+              ConditionExpression: 'attribute_not_exists(userId)',
+            },
+          },
+          {
+            Update: {
+              TableName: USERS,
+              Key: { userId },
+              UpdateExpression:
+                'SET displayName = :n, streak = :s, lastDay = :d ADD #total :p, answered :one, correctCount :c',
+              ExpressionAttributeNames: { '#total': 'total' },
+              ExpressionAttributeValues: {
+                ':n': displayName,
+                ':s': streak,
+                ':d': v.today,
+                ':p': points,
+                ':one': 1,
+                ':c': v.result.correct ? 1 : 0,
+              },
+            },
+          },
+        ],
       }),
     )
   } catch (e: any) {
-    if (e.name === 'ConditionalCheckFailedException') {
+    if (e.name === 'TransactionCanceledException') {
       const prev = (await db.send(new GetCommand({ TableName: ANSWERS, Key: { userId, day } }))).Item
       return json(409, { error: 'already answered', previous: prev })
     }
     throw e
   }
-
-  await db.send(
-    new UpdateCommand({
-      TableName: USERS,
-      Key: { userId },
-      UpdateExpression:
-        'SET displayName = :n, streak = :s, lastDay = :d ADD total :p, answered :one, correctCount :c',
-      ExpressionAttributeValues: {
-        ':n': displayName,
-        ':s': streak,
-        ':d': v.today,
-        ':p': points,
-        ':one': 1,
-        ':c': v.result.correct ? 1 : 0,
-      },
-    }),
-  )
   return json(200, { ...v.result, points, streak, saved: true })
 }
 
