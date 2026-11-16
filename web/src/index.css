@@ -1,0 +1,31 @@
+:root {
+  --bg: #fafafa; --fg: #1c1c1e; --muted: #6b6b70; --card: #fff; --line: #e2e2e6;
+  --accent: #5b4bdb; --ok: #1f9d55; --bad: #d64545;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121214; --fg: #ececf0; --muted: #9a9aa2; --card: #1c1c20; --line: #2c2c32; --accent: #8c7dff; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.5 system-ui, sans-serif; }
+.app { max-width: 640px; margin: 0 auto; padding: 0 16px 48px; }
+header { display: flex; justify-content: space-between; align-items: center; padding: 16px 0; border-bottom: 1px solid var(--line); }
+header nav { display: flex; gap: 14px; align-items: center; }
+a { color: var(--accent); text-decoration: none; }
+.brand { font-weight: 700; font-size: 1.15rem; color: var(--fg); }
+button { font: inherit; cursor: pointer; border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 8px; padding: 6px 12px; }
+h1 { font-size: 1.4rem; line-height: 1.35; margin: 8px 0 20px; }
+.meta { color: var(--muted); font-size: .9rem; margin-top: 24px; }
+.options { list-style: none; padding: 0; margin: 0; display: grid; gap: 10px; }
+.options button { width: 100%; text-align: left; padding: 14px; border-radius: 10px; }
+.options button:hover:not(:disabled) { border-color: var(--accent); }
+.options b { color: var(--accent); margin-right: 8px; }
+.options .right { border-color: var(--ok); background: color-mix(in srgb, var(--ok) 15%, var(--card)); }
+.options .wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 15%, var(--card)); }
+.options .dim { opacity: .55; }
+.explain { margin-top: 24px; padding: 16px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; }
+.explain h2 { margin: 0 0 8px; font-size: 1.1rem; }
+.nudge { background: color-mix(in srgb, var(--accent) 10%, transparent); padding: 10px; border-radius: 8px; }
+.err { color: var(--bad); }
+.board { list-style: none; padding: 0; }
+.board li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }

@@ -8,3 +8,7 @@ dist/
 *accessKeys*
 CLAUDE.md
 .DS_Store
+questions/
+build/
+backend/dist/
+backend/src/data/

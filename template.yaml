@@ -1,0 +1,207 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: neuromial daily neuroanatomy quiz
+
+Parameters:
+  SiteUrl:
+    Type: String
+    Default: https://jerry-master.github.io/neuromial
+  GoogleClientId:
+    Type: String
+    Default: ''
+  GoogleClientSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+
+Conditions:
+  HasGoogle: !Not [!Equals [!Ref GoogleClientId, '']]
+
+Globals:
+  Function:
+    Runtime: nodejs20.x
+    Architectures: [arm64]
+    Timeout: 10
+    MemorySize: 128
+    CodeUri: backend/dist/
+    Environment:
+      Variables:
+        DATA_BUCKET: !Ref DataBucket
+        USERS_TABLE: !Ref UsersTable
+        ANSWERS_TABLE: !Ref AnswersTable
+
+Resources:
+  # ---------- data ----------
+  UsersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: userId, AttributeType: S }
+      KeySchema:
+        - { AttributeName: userId, KeyType: HASH }
+
+  AnswersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: userId, AttributeType: S }
+        - { AttributeName: day, AttributeType: S }
+      KeySchema:
+        - { AttributeName: userId, KeyType: HASH }
+        - { AttributeName: day, KeyType: RANGE }
+
+  # ---------- auth ----------
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: neuromial
+      UsernameAttributes: [email]
+      AutoVerifiedAttributes: [email]
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireUppercase: false
+          RequireSymbols: false
+
+  UserPoolDomain:
+    Type: AWS::Cognito::UserPoolDomain
+    Properties:
+      UserPoolId: !Ref UserPool
+      Domain: !Sub neuromial-${AWS::AccountId}
+
+  GoogleIdp:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: HasGoogle
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Google
+      ProviderType: Google
+      ProviderDetails:
+        client_id: !Ref GoogleClientId
+        client_secret: !Ref GoogleClientSecret
+        authorize_scopes: openid email profile
+      AttributeMapping:
+        email: email
+        name: name
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      AllowedOAuthFlowsUserPoolClient: true
+      AllowedOAuthFlows: [code]
+      AllowedOAuthScopes: [openid, email, profile]
+      # Ref of the IdP is "<poolId>:Google"; using it creates the dependency on GoogleIdp
+      SupportedIdentityProviders: !If [HasGoogle, [COGNITO, !Select [1, !Split [':', !Ref GoogleIdp]]], [COGNITO]]
+      CallbackURLs:
+        - http://localhost:5173/
+        - !Sub ${SiteUrl}/
+      LogoutURLs:
+        - http://localhost:5173/
+        - !Sub ${SiteUrl}/
+
+  # ---------- API ----------
+  Api:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      DefaultRouteSettings:
+        ThrottlingBurstLimit: 20
+        ThrottlingRateLimit: 10
+      CorsConfiguration:
+        AllowOrigins: [https://jerry-master.github.io, 'http://localhost:5173']
+        AllowHeaders: [authorization, content-type]
+        AllowMethods: [GET, POST, OPTIONS]
+      Auth:
+        DefaultAuthorizer: Jwt
+        Authorizers:
+          Jwt:
+            IdentitySource: $request.header.Authorization
+            JwtConfiguration:
+              issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
+              audience: [!Ref UserPoolClient]
+
+  AnswerAnonFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.answerAnon
+      Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
+      Events:
+        Http:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Method: POST, Path: /answer, Auth: { Authorizer: NONE } }
+
+  AnswerScoredFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.answerScored
+      Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
+        - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref AnswersTable }
+      Events:
+        Http:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Method: POST, Path: /answer/scored, Auth: { Authorizer: Jwt } }
+
+  MeFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.me
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+        - DynamoDBReadPolicy: { TableName: !Ref AnswersTable }
+      Events:
+        Http:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Method: GET, Path: /me, Auth: { Authorizer: Jwt } }
+
+  LeaderboardFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.leaderboard
+      Policies:
+        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
+      Events:
+        Http:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Method: GET, Path: /leaderboard, Auth: { Authorizer: NONE } }
+
+  # ---------- private question bank (never public, read only by Lambdas) ----------
+  DataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  TodayFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.today
+      Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
+      Events:
+        Http:
+          Type: HttpApi
+          Properties: { ApiId: !Ref Api, Method: GET, Path: /today, Auth: { Authorizer: NONE } }
+
+  # keep logs 7 days so CloudWatch stays inside the free 5 GB
+  TodayLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${TodayFn}', RetentionInDays: 7 } }
+  AnswerAnonLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${AnswerAnonFn}', RetentionInDays: 7 } }
+  AnswerScoredLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${AnswerScoredFn}', RetentionInDays: 7 } }
+  MeLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${MeFn}', RetentionInDays: 7 } }
+  LeaderboardLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${LeaderboardFn}', RetentionInDays: 7 } }
+
+Outputs:
+  ApiUrl: { Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com' }
+  DataBucketName: { Value: !Ref DataBucket }
+  CognitoDomain: { Value: !Sub 'neuromial-${AWS::AccountId}.auth.${AWS::Region}.amazoncognito.com' }
+  UserPoolClientId: { Value: !Ref UserPoolClient }
