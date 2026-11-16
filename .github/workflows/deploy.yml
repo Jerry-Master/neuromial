@@ -24,6 +24,15 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
+      - name: Require Actions variables
+        env:
+          A: ${{ vars.VITE_API_URL }}
+          B: ${{ vars.VITE_COGNITO_DOMAIN }}
+          C: ${{ vars.VITE_CLIENT_ID }}
+        run: |
+          for v in A B C; do
+            [ -n "${!v}" ] || { echo "::error::Missing repo variable VITE_API_URL / VITE_COGNITO_DOMAIN / VITE_CLIENT_ID (Settings > Secrets and variables > Actions > Variables)"; exit 1; }
+          done
       - run: npm ci
         working-directory: web
       - run: npm run build
