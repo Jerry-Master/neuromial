@@ -9,8 +9,8 @@ const DAY_MS = 86_400_000
 export const todayEpoch = () => Math.floor(Date.now() / DAY_MS)
 export const dayString = (d: number) => new Date(d * DAY_MS).toISOString().slice(0, 10)
 
-export type Question = { id: string; type: string; prompt: string; options: string[]; tags: string[] }
-export type Result = { correct: boolean; correctIndex: number; explanation: string; points: number; saved: boolean; choice: number }
+export type Question = { id: string; type: string; prompt: string; options: string[]; tags: string[]; difficulty?: 'easy' | 'medium' | 'hard' }
+export type Result = { correct: boolean; correctIndex: number; explanation: string; points: number; saved: boolean; choice: number; streak?: number }
 
 // ---------- local history (anonymous play) ----------
 const HIST = 'neuromial:history'
@@ -42,7 +42,8 @@ type Tokens = { id_token: string; refresh_token?: string; exp: number }
 const b64url = (buf: ArrayBuffer) =>
   btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 
-export async function login(provider?: 'Google') {
+export async function login(provider?: string) {
+  sessionStorage.setItem('neuromial:provider', provider ?? '')
   const verifier = b64url(crypto.getRandomValues(new Uint8Array(32)).buffer)
   const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)))
   sessionStorage.setItem('neuromial:verifier', verifier)
@@ -117,3 +118,6 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = false)
   const res = await fetch(`${API}${path}`, { ...init, headers })
   return { status: res.status, data: await res.json().catch(() => ({}) as T) }
 }
+
+// fetched as soon as the script loads, before React renders
+export const todayRequest = api<{ day: string; question: Question }>('/today')

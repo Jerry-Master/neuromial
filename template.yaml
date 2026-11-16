@@ -13,22 +13,55 @@ Parameters:
     Type: String
     Default: ''
     NoEcho: true
+  # Microsoft personal accounts ("consumers" tenant). Use your tenant id for work/school accounts.
+  MicrosoftTenantId:
+    Type: String
+    Default: 9188040d-6c67-4c5b-b112-36a304b66dad
+  MicrosoftClientId:
+    Type: String
+    Default: ''
+  MicrosoftClientSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+  AmazonClientId:
+    Type: String
+    Default: ''
+  AmazonClientSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
+  # daily email: set both to enable (the sender must be verified in SES)
+  SenderEmail:
+    Type: String
+    Default: ''
+  EmailSecret:
+    Type: String
+    Default: ''
+    NoEcho: true
 
 Conditions:
   HasGoogle: !Not [!Equals [!Ref GoogleClientId, '']]
+  HasMicrosoft: !Not [!Equals [!Ref MicrosoftClientId, '']]
+  HasAmazon: !Not [!Equals [!Ref AmazonClientId, '']]
+  HasEmail: !And [!Not [!Equals [!Ref SenderEmail, '']], !Not [!Equals [!Ref EmailSecret, '']]]
 
 Globals:
   Function:
     Runtime: nodejs20.x
     Architectures: [arm64]
     Timeout: 10
-    MemorySize: 128
+    # more memory = more CPU: faster cold starts, still negligible cost at this traffic
+    MemorySize: 256
     Environment:
       Variables:
-        DATA_BUCKET: !Ref DataBucket
         USERS_TABLE: !Ref UsersTable
         ANSWERS_TABLE: !Ref AnswersTable
         USERNAMES_TABLE: !Ref UsernamesTable
+        REPORTS_TABLE: !Ref ReportsTable
+        SITE_URL: !Ref SiteUrl
+        SENDER_EMAIL: !If [HasEmail, !Ref SenderEmail, '']
+        EMAIL_SECRET: !If [HasEmail, !Ref EmailSecret, '']
 
 Resources:
   # ---------- data ----------
@@ -61,6 +94,18 @@ Resources:
       KeySchema:
         - { AttributeName: name, KeyType: HASH }
 
+  # players flag problems with a question
+  ReportsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: questionId, AttributeType: S }
+        - { AttributeName: at, AttributeType: S }
+      KeySchema:
+        - { AttributeName: questionId, KeyType: HASH }
+        - { AttributeName: at, KeyType: RANGE }
+
   # ---------- auth ----------
   UserPool:
     Type: AWS::Cognito::UserPool
@@ -75,6 +120,29 @@ Resources:
           RequireNumbers: true
           RequireUppercase: false
           RequireSymbols: false
+      LambdaConfig:
+        PreSignUp: !GetAtt PreSignUpFn.Arn
+
+  # links a social sign-in to an existing password account with the same verified email
+  PreSignUpFn:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/dist/
+      Handler: presignup.handler
+      Timeout: 5
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: [cognito-idp:ListUsers, cognito-idp:AdminLinkProviderForUser]
+              Resource: !Sub arn:aws:cognito-idp:${AWS::Region}:${AWS::AccountId}:userpool/*
+
+  PreSignUpPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref PreSignUpFn
+      Principal: cognito-idp.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
 
   UserPoolDomain:
     Type: AWS::Cognito::UserPoolDomain
@@ -97,6 +165,38 @@ Resources:
         email: email
         name: name
 
+  MicrosoftIdp:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: HasMicrosoft
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: Microsoft
+      ProviderType: OIDC
+      ProviderDetails:
+        client_id: !Ref MicrosoftClientId
+        client_secret: !Ref MicrosoftClientSecret
+        attributes_request_method: GET
+        oidc_issuer: !Sub https://login.microsoftonline.com/${MicrosoftTenantId}/v2.0
+        authorize_scopes: openid email profile
+      AttributeMapping:
+        email: email
+        name: name
+
+  AmazonIdp:
+    Type: AWS::Cognito::UserPoolIdentityProvider
+    Condition: HasAmazon
+    Properties:
+      UserPoolId: !Ref UserPool
+      ProviderName: LoginWithAmazon
+      ProviderType: LoginWithAmazon
+      ProviderDetails:
+        client_id: !Ref AmazonClientId
+        client_secret: !Ref AmazonClientSecret
+        authorize_scopes: profile
+      AttributeMapping:
+        email: email
+        name: name
+
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
@@ -105,8 +205,12 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows: [code]
       AllowedOAuthScopes: [openid, email, profile]
-      # the unused Ref only creates the dependency: client is created after the Google provider
-      SupportedIdentityProviders: !If [HasGoogle, [COGNITO, !Select [0, [Google, !Ref GoogleIdp]]], [COGNITO]]
+      # each unused Ref only creates the dependency: the client is created after its providers
+      SupportedIdentityProviders:
+        - COGNITO
+        - !If [HasGoogle, !Select [0, [Google, !Ref GoogleIdp]], !Ref AWS::NoValue]
+        - !If [HasMicrosoft, !Select [0, [Microsoft, !Ref MicrosoftIdp]], !Ref AWS::NoValue]
+        - !If [HasAmazon, !Select [0, [LoginWithAmazon, !Ref AmazonIdp]], !Ref AWS::NoValue]
       CallbackURLs:
         - http://localhost:5173/
         - !Sub ${SiteUrl}/
@@ -134,69 +238,51 @@ Resources:
               issuer: !Sub https://cognito-idp.${AWS::Region}.amazonaws.com/${UserPool}
               audience: [!Ref UserPoolClient]
 
-  AnswerAnonFn:
+  # one function for every route (see main() in backend/src/handler.ts)
+  ApiFn:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: backend/dist/
-      Handler: handler.answerAnon
+      Handler: handler.main
       Policies:
-        - S3ReadPolicy: { BucketName: !Ref DataBucket }
-      Events:
-        Http:
-          Type: HttpApi
-          Properties: { ApiId: !Ref Api, Method: POST, Path: /answer, Auth: { Authorizer: NONE } }
-
-  AnswerScoredFn:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: backend/dist/
-      Handler: handler.answerScored
-      Policies:
-        - S3ReadPolicy: { BucketName: !Ref DataBucket }
         - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
         - DynamoDBCrudPolicy: { TableName: !Ref AnswersTable }
-      Events:
-        Http:
-          Type: HttpApi
-          Properties: { ApiId: !Ref Api, Method: POST, Path: /answer/scored, Auth: { Authorizer: Jwt } }
-
-  SetUsernameFn:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: backend/dist/
-      Handler: handler.setUsername
-      Policies:
-        - DynamoDBCrudPolicy: { TableName: !Ref UsersTable }
         - DynamoDBCrudPolicy: { TableName: !Ref UsernamesTable }
+        - DynamoDBCrudPolicy: { TableName: !Ref ReportsTable }
       Events:
-        Http:
-          Type: HttpApi
-          Properties: { ApiId: !Ref Api, Method: PUT, Path: /me/username, Auth: { Authorizer: Jwt } }
+        Today: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /today, Auth: { Authorizer: NONE } } }
+        AnswerAnon: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: POST, Path: /answer, Auth: { Authorizer: NONE } } }
+        AnswerScored: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: POST, Path: /answer/scored, Auth: { Authorizer: Jwt } } }
+        Me: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /me, Auth: { Authorizer: Jwt } } }
+        SetUsername: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: PUT, Path: /me/username, Auth: { Authorizer: Jwt } } }
+        SetEmail: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: PUT, Path: /me/email, Auth: { Authorizer: Jwt } } }
+        Leaderboard: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /leaderboard, Auth: { Authorizer: NONE } } }
+        Report: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: POST, Path: /report, Auth: { Authorizer: NONE } } }
+        UnsubGet: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /unsubscribe, Auth: { Authorizer: NONE } } }
+        UnsubPost: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: POST, Path: /unsubscribe, Auth: { Authorizer: NONE } } }
 
-  MeFn:
+  # 07:00 UTC reminder to opted-in players who have not answered yet
+  DailyMailFn:
     Type: AWS::Serverless::Function
+    Condition: HasEmail
     Properties:
       CodeUri: backend/dist/
-      Handler: handler.me
+      Handler: mail.dailyMail
+      Timeout: 300
+      Environment:
+        Variables:
+          API_URL: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com'
       Policies:
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-        - DynamoDBReadPolicy: { TableName: !Ref AnswersTable }
+        - Statement:
+            - Effect: Allow
+              Action: ses:SendEmail
+              Resource: '*'
       Events:
-        Http:
-          Type: HttpApi
-          Properties: { ApiId: !Ref Api, Method: GET, Path: /me, Auth: { Authorizer: Jwt } }
-
-  LeaderboardFn:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: backend/dist/
-      Handler: handler.leaderboard
-      Policies:
-        - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
-      Events:
-        Http:
-          Type: HttpApi
-          Properties: { ApiId: !Ref Api, Method: GET, Path: /leaderboard, Auth: { Authorizer: NONE } }
+        Daily:
+          Type: ScheduleV2
+          Properties:
+            ScheduleExpression: cron(0 7 * * ? *)
 
   # ---------- private question bank (never public, read only by Lambdas) ----------
   DataBucket:
@@ -208,25 +294,13 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  TodayFn:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: backend/dist/
-      Handler: handler.today
-      Policies:
-        - S3ReadPolicy: { BucketName: !Ref DataBucket }
-      Events:
-        Http:
-          Type: HttpApi
-          Properties: { ApiId: !Ref Api, Method: GET, Path: /today, Auth: { Authorizer: NONE } }
-
   # keep logs 7 days so CloudWatch stays inside the free 5 GB
-  TodayLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${TodayFn}', RetentionInDays: 7 } }
-  AnswerAnonLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${AnswerAnonFn}', RetentionInDays: 7 } }
-  AnswerScoredLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${AnswerScoredFn}', RetentionInDays: 7 } }
-  MeLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${MeFn}', RetentionInDays: 7 } }
-  SetUsernameLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${SetUsernameFn}', RetentionInDays: 7 } }
-  LeaderboardLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${LeaderboardFn}', RetentionInDays: 7 } }
+  ApiLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${ApiFn}', RetentionInDays: 7 } }
+  PreSignUpLogs: { Type: AWS::Logs::LogGroup, Properties: { LogGroupName: !Sub '/aws/lambda/${PreSignUpFn}', RetentionInDays: 7 } }
+  DailyMailLogs:
+    Type: AWS::Logs::LogGroup
+    Condition: HasEmail
+    Properties: { LogGroupName: !Sub '/aws/lambda/${DailyMailFn}', RetentionInDays: 7 }
 
 Outputs:
   ApiUrl: { Value: !Sub 'https://${Api}.execute-api.${AWS::Region}.amazonaws.com' }

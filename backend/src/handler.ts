@@ -3,17 +3,23 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import {
   DynamoDBDocumentClient,
   GetCommand,
+  PutCommand,
   QueryCommand,
   ScanCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb'
 import { checkAnswer, dayString, epochDay, nextStreak, pointsFor, publicQuestion, questionIdForDay } from './logic.ts'
 import { getData } from './data.ts'
+import { emailEnabled, setEmailOptIn, unsubscribe } from './mail.ts'
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}))
 const USERS = process.env.USERS_TABLE!
 const ANSWERS = process.env.ANSWERS_TABLE!
 const USERNAMES = process.env.USERNAMES_TABLE!
+const REPORTS = process.env.REPORTS_TABLE!
+
+// start reading the question bank during init, before the first request arrives
+getData().catch(() => undefined)
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer
 
@@ -140,26 +146,49 @@ export async function me(event: Event): Promise<APIGatewayProxyResultV2> {
     streak: user.Item?.lastDay >= epochDay() - 1 ? user.Item?.streak ?? 0 : 0,
     answered: user.Item?.answered ?? 0,
     correctCount: user.Item?.correctCount ?? 0,
+    emailAvailable: emailEnabled(),
+    emailOptIn: user.Item?.emailOptIn === true,
     answeredToday: history.Items?.some((i) => i.day === today) ?? false,
     history: history.Items ?? [],
   })
 }
 
-// GET /leaderboard : public. Small scale, a scan is fine.
-let boardCache: { at: number; top: unknown[] } | undefined
-export async function leaderboard(): Promise<APIGatewayProxyResultV2> {
+// GET /leaderboard[?period=week] : public. Small scale, a scan is fine.
+// "week" = points earned since Monday (UTC).
+const boardCache: Record<string, { at: number; top: unknown[] }> = {}
+export async function leaderboard(event?: Event): Promise<APIGatewayProxyResultV2> {
+  const period = event?.queryStringParameters?.period === 'week' ? 'week' : 'all'
   const headers = { 'content-type': 'application/json', 'cache-control': 'public, max-age=120' }
-  if (boardCache && Date.now() - boardCache.at < 120_000) {
-    return { statusCode: 200, headers, body: JSON.stringify({ top: boardCache.top }) }
+  const hit = boardCache[period]
+  if (hit && Date.now() - hit.at < 120_000) {
+    return { statusCode: 200, headers, body: JSON.stringify({ top: hit.top, period }) }
   }
-  const res = await db.send(new ScanCommand({ TableName: USERS, Limit: 1000 }))
-  const top = (res.Items ?? [])
-    .filter((u) => u.username)
-    .sort((a, b) => (b.total ?? 0) - (a.total ?? 0))
+  const users = (await db.send(new ScanCommand({ TableName: USERS, Limit: 1000 }))).Items ?? []
+  let score = (u: Record<string, any>) => (u.total ?? 0) as number
+  if (period === 'week') {
+    const today = epochDay()
+    const monday = today - ((new Date(today * 86_400_000).getUTCDay() + 6) % 7)
+    const res = await db.send(
+      new ScanCommand({
+        TableName: ANSWERS,
+        FilterExpression: '#d >= :m',
+        ExpressionAttributeNames: { '#d': 'day' },
+        ExpressionAttributeValues: { ':m': dayString(monday) },
+        ProjectionExpression: 'userId, points',
+      }),
+    )
+    const week: Record<string, number> = {}
+    for (const a of res.Items ?? []) week[a.userId] = (week[a.userId] ?? 0) + (a.points ?? 0)
+    score = (u) => week[u.userId] ?? 0
+  }
+  const today = epochDay()
+  const top = users
+    .filter((u) => u.username && (period === 'all' || score(u) > 0))
+    .sort((a, b) => score(b) - score(a))
     .slice(0, 50)
-    .map((u) => ({ name: u.username, total: u.total ?? 0, streak: u.streak ?? 0 }))
-  boardCache = { at: Date.now(), top }
-  return { statusCode: 200, headers, body: JSON.stringify({ top }) }
+    .map((u) => ({ name: u.username, total: score(u), streak: u.lastDay >= today - 1 ? u.streak ?? 0 : 0 }))
+  boardCache[period] = { at: Date.now(), top }
+  return { statusCode: 200, headers, body: JSON.stringify({ top, period }) }
 }
 
 const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/
@@ -217,4 +246,49 @@ export async function setUsername(event: Event): Promise<APIGatewayProxyResultV2
     throw e
   }
   return json(200, { username })
+}
+
+// POST /report : public. A player flags a problem with a question.
+export async function report(event: Event): Promise<APIGatewayProxyResultV2> {
+  let body: { questionId?: unknown; note?: unknown }
+  try {
+    body = JSON.parse(event.body ?? '{}')
+  } catch {
+    body = {}
+  }
+  const data = await getData()
+  const { questionId, note } = body
+  if (typeof questionId !== 'string' || !data.questions[questionId] || typeof note !== 'string') {
+    return json(400, { error: 'bad request' })
+  }
+  const text = note.trim().slice(0, 500)
+  if (!text) return json(400, { error: 'Write a short note.' })
+  const sub = (event.requestContext as any).authorizer?.jwt?.claims?.sub
+  await db.send(
+    new PutCommand({
+      TableName: REPORTS,
+      Item: { questionId, at: new Date().toISOString(), note: text, ...(sub ? { userId: String(sub) } : {}) },
+    }),
+  )
+  return json(200, { ok: true })
+}
+
+// One Lambda serves every route: a single warm container answers all requests,
+// so loading /today also warms the answer path.
+const routes: Record<string, (e: Event) => Promise<APIGatewayProxyResultV2>> = {
+  'GET /today': today,
+  'POST /answer': answerAnon,
+  'POST /answer/scored': answerScored,
+  'GET /me': me,
+  'PUT /me/username': setUsername,
+  'GET /leaderboard': leaderboard,
+  'POST /report': report,
+  'PUT /me/email': setEmailOptIn,
+  'GET /unsubscribe': unsubscribe,
+  'POST /unsubscribe': unsubscribe,
+}
+
+export async function main(event: Event): Promise<APIGatewayProxyResultV2> {
+  const fn = routes[event.routeKey]
+  return fn ? fn(event) : json(404, { error: 'not found' })
 }
