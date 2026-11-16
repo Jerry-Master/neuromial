@@ -29,3 +29,5 @@ h1 { font-size: 1.4rem; line-height: 1.35; margin: 8px 0 20px; }
 .err { color: var(--bad); }
 .board { list-style: none; padding: 0; }
 .board li { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.username { display: grid; gap: 8px; margin: 12px 0 20px; }
+.username input { font: inherit; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--fg); }

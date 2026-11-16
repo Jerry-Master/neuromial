@@ -30,6 +30,29 @@ function Layout({ children }: { children: React.ReactNode }) {
   )
 }
 
+function UsernameForm({ current, onSaved }: { current?: string; onSaved: (name: string) => void }) {
+  const [name, setName] = useState(current ?? '')
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    setBusy(true)
+    setMsg('')
+    const { status, data } = await api<any>('/me/username', { method: 'PUT', body: JSON.stringify({ username: name.trim() }) }, true)
+    setBusy(false)
+    if (status === 200) onSaved(data.username)
+    else setMsg(data.error ?? 'Could not save the username.')
+  }
+  return (
+    <form onSubmit={save} className="username">
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="username" maxLength={20} minLength={3} required autoFocus />
+      <button disabled={busy || name.trim() === current}>{current ? 'Change' : 'Save'}</button>
+      {msg && <p className="err">{msg}</p>}
+      <p className="meta">3-20 letters, numbers or underscores. Shown on the leaderboard. Must be unique.</p>
+    </form>
+  )
+}
+
 function Today() {
   const loggedIn = useLoggedIn()
   const [day, setDay] = useState('')
@@ -37,6 +60,11 @@ function Today() {
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [me, setMe] = useState<any>(null)
+
+  useEffect(() => {
+    if (loggedIn) api('/me', {}, true).then((r) => setMe(r.data))
+  }, [loggedIn])
 
   useEffect(() => {
     api<{ day: string; question: Question }>('/today')
@@ -64,6 +92,9 @@ function Today() {
       const r: Result = { ...data, choice }
       saveResult(day, r)
       setResult(r)
+    } else if (status === 403) {
+      setError('Choose a username first.')
+      setMe((m: any) => (m ? { ...m, username: null } : m))
     } else if (status === 409 && data.previous) {
       setError('You already answered today on this account.')
     } else {
@@ -72,6 +103,15 @@ function Today() {
   }
 
   if (!q) return <p>{error || 'Loading…'}</p>
+  if (loggedIn && me && !me.username) {
+    return (
+      <>
+        <h1>Pick a username</h1>
+        <p>This is the name shown on the leaderboard.</p>
+        <UsernameForm onSaved={(u) => setMe({ ...me, username: u })} />
+      </>
+    )
+  }
   return (
     <>
       <p className="meta">{day} · streak {localStreak()} 🔥</p>
@@ -137,7 +177,8 @@ function Profile() {
   if (!me) return <p>Loading…</p>
   return (
     <>
-      <h1>Your stats</h1>
+      <h1>{me.username ?? 'Your stats'}</h1>
+      <UsernameForm current={me.username ?? undefined} onSaved={(u) => setMe({ ...me, username: u })} />
       <p>{me.total} points · streak {me.streak}🔥 · {me.correctCount}/{me.answered} correct</p>
       <ul className="board">
         {me.history.map((h: any) => (

@@ -13,6 +13,7 @@ import { getData } from './data.ts'
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}))
 const USERS = process.env.USERS_TABLE!
 const ANSWERS = process.env.ANSWERS_TABLE!
+const USERNAMES = process.env.USERNAMES_TABLE!
 
 type Event = APIGatewayProxyEventV2WithJWTAuthorizer
 
@@ -38,7 +39,7 @@ async function validate(event: Event) {
     return { ok: false as const, error: json(400, { error: 'bad request' }) }
   }
   if (questionId !== questionIdForDay(data, today)) {
-    return { error: json(409, { error: 'not today’s question' }) }
+    return { ok: false as const, error: json(409, { error: 'not today’s question' }) }
   }
   const result = checkAnswer(data, questionId, choice!)
   if (!result) return { ok: false as const, error: json(400, { error: 'unknown question' }) }
@@ -68,10 +69,10 @@ export async function answerScored(event: Event): Promise<APIGatewayProxyResultV
   if (!v.ok) return v.error
   const claims = event.requestContext.authorizer.jwt.claims
   const userId = String(claims.sub)
-  const displayName = String(claims.name ?? claims.nickname ?? `Player-${userId.slice(0, 4)}`)
   const day = dayString(v.today)
 
   const user = (await db.send(new GetCommand({ TableName: USERS, Key: { userId } }))).Item
+  if (!user?.username) return json(403, { error: 'username required' })
   const streak = nextStreak(user?.lastDay, v.today, user?.streak ?? 0)
   const points = pointsFor(v.result.correct, user?.lastDay === v.today - 1 ? user.streak : 0)
 
@@ -92,10 +93,10 @@ export async function answerScored(event: Event): Promise<APIGatewayProxyResultV
               TableName: USERS,
               Key: { userId },
               UpdateExpression:
-                'SET displayName = :n, streak = :s, lastDay = :d ADD #total :p, answered :one, correctCount :c',
+                'SET username = :n, streak = :s, lastDay = :d ADD #total :p, answered :one, correctCount :c',
               ExpressionAttributeNames: { '#total': 'total' },
               ExpressionAttributeValues: {
-                ':n': displayName,
+                ':n': user.username,
                 ':s': streak,
                 ':d': v.today,
                 ':p': points,
@@ -134,6 +135,7 @@ export async function me(event: Event): Promise<APIGatewayProxyResultV2> {
   ])
   const today = dayString(epochDay())
   return json(200, {
+    username: user.Item?.username ?? null,
     total: user.Item?.total ?? 0,
     streak: user.Item?.lastDay >= epochDay() - 1 ? user.Item?.streak ?? 0 : 0,
     answered: user.Item?.answered ?? 0,
@@ -152,9 +154,67 @@ export async function leaderboard(): Promise<APIGatewayProxyResultV2> {
   }
   const res = await db.send(new ScanCommand({ TableName: USERS, Limit: 1000 }))
   const top = (res.Items ?? [])
+    .filter((u) => u.username)
     .sort((a, b) => (b.total ?? 0) - (a.total ?? 0))
     .slice(0, 50)
-    .map((u) => ({ name: u.displayName, total: u.total ?? 0, streak: u.streak ?? 0 }))
+    .map((u) => ({ name: u.username, total: u.total ?? 0, streak: u.streak ?? 0 }))
   boardCache = { at: Date.now(), top }
   return { statusCode: 200, headers, body: JSON.stringify({ top }) }
+}
+
+const USERNAME_RE = /^[A-Za-z0-9_]{3,20}$/
+
+// PUT /me/username : JWT required. Names are unique, case-insensitive.
+export async function setUsername(event: Event): Promise<APIGatewayProxyResultV2> {
+  const userId = String(event.requestContext.authorizer.jwt.claims.sub)
+  let username: unknown
+  try {
+    username = JSON.parse(event.body ?? '{}').username
+  } catch {
+    username = undefined
+  }
+  if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
+    return json(400, { error: 'Use 3-20 letters, numbers or underscores.' })
+  }
+  const lower = username.toLowerCase()
+  const user = (await db.send(new GetCommand({ TableName: USERS, Key: { userId } }))).Item
+  const oldLower: string | undefined = user?.usernameLower
+
+  const items: NonNullable<ConstructorParameters<typeof TransactWriteCommand>[0]['TransactItems']> = [
+    {
+      Put: {
+        TableName: USERNAMES,
+        Item: { name: lower, userId },
+        // free, or already mine (lets me change only the capitalisation)
+        ConditionExpression: 'attribute_not_exists(#n) OR userId = :u',
+        ExpressionAttributeNames: { '#n': 'name' },
+        ExpressionAttributeValues: { ':u': userId },
+      },
+    },
+    {
+      Update: {
+        TableName: USERS,
+        Key: { userId },
+        UpdateExpression: 'SET username = :d, usernameLower = :l',
+        ExpressionAttributeValues: { ':d': username, ':l': lower },
+      },
+    },
+  ]
+  if (oldLower && oldLower !== lower) {
+    items.push({
+      Delete: {
+        TableName: USERNAMES,
+        Key: { name: oldLower },
+        ConditionExpression: 'userId = :u',
+        ExpressionAttributeValues: { ':u': userId },
+      },
+    })
+  }
+  try {
+    await db.send(new TransactWriteCommand({ TransactItems: items }))
+  } catch (e: any) {
+    if (e.name === 'TransactionCanceledException') return json(409, { error: 'That username is taken.' })
+    throw e
+  }
+  return json(200, { username })
 }
