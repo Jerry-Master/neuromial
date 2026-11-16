@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { HashRouter, Link, Route, Routes, useNavigate } from 'react-router-dom'
 import {
-  api, getToken, handleCallback, localStreak, login, loadHistory, logout,
+  api, clearHistory, getToken, handleCallback, login, loadHistory, logout,
   saveResult, type Question, type Result,
 } from './lib'
 
@@ -64,7 +64,13 @@ function Today() {
 
   useEffect(() => {
     if (loggedIn) api('/me', {}, true).then((r) => setMe(r.data))
+    if (loggedIn === false) clearHistory() // anonymous play is never remembered
   }, [loggedIn])
+
+  // signed-in users get one scored attempt per day, so restore today's saved result
+  useEffect(() => {
+    if (loggedIn && day) setResult(loadHistory()[day] ?? null)
+  }, [loggedIn, day])
 
   useEffect(() => {
     api<{ day: string; question: Question }>('/today')
@@ -72,7 +78,6 @@ function Today() {
         if (!r.data.question) throw new Error('no question')
         setDay(r.data.day)
         setQ(r.data.question)
-        setResult(loadHistory()[r.data.day] ?? null)
       })
       .catch(() => setError('Could not load today’s question.'))
   }, [])
@@ -90,7 +95,7 @@ function Today() {
     setBusy(false)
     if (status === 200) {
       const r: Result = { ...data, choice }
-      saveResult(day, r)
+      if (r.saved) saveResult(day, r)
       setResult(r)
     } else if (status === 403) {
       setError('Choose a username first.')
@@ -114,7 +119,7 @@ function Today() {
   }
   return (
     <>
-      <p className="meta">{day} · streak {localStreak()} 🔥</p>
+      <p className="meta">{day}{loggedIn && me ? ` · streak ${me.streak} 🔥` : ''}</p>
       <h1>{q.prompt}</h1>
       <ul className="options">
         {q.options.map((o, i) => {
@@ -139,7 +144,11 @@ function Today() {
               Playing anonymously. <button onClick={() => login()}>Sign in</button> to earn points and join the leaderboard.
             </p>
           )}
-          <p className="meta">Come back tomorrow (UTC) for a new question.</p>
+          {result.saved ? (
+            <p className="meta">Come back tomorrow (UTC) for a new question.</p>
+          ) : (
+            <p><button onClick={() => setResult(null)}>Try again</button></p>
+          )}
         </section>
       )}
     </>

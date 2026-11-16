@@ -28,18 +28,13 @@ export function saveResult(day: string, r: Result) {
     /* storage unavailable: result just isn't remembered */
   }
 }
-export function localStreak(): number {
-  const h = loadHistory()
-  let d = todayEpoch()
-  if (!h[dayString(d)]) d -= 1
-  let n = 0
-  while (h[dayString(d)]) {
-    n++
-    d--
+export function clearHistory() {
+  try {
+    localStorage.removeItem(HIST)
+  } catch {
+    /* ignore */
   }
-  return n
 }
-
 // ---------- auth: Cognito hosted UI, authorization code + PKCE ----------
 const TOK = 'neuromial:tokens'
 type Tokens = { id_token: string; refresh_token?: string; exp: number }
@@ -108,6 +103,7 @@ function logoutLocal(): null {
 
 export function logout() {
   logoutLocal()
+  clearHistory() // forget saved answers so the next visitor on this browser starts fresh
   location.href = `https://${COGNITO_DOMAIN}/logout?client_id=${CLIENT_ID}&logout_uri=${encodeURIComponent(location.origin + BASE)}`
 }
 
