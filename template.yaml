@@ -23,7 +23,6 @@ Globals:
     Architectures: [arm64]
     Timeout: 10
     MemorySize: 128
-    CodeUri: backend/dist/
     Environment:
       Variables:
         DATA_BUCKET: !Ref DataBucket
@@ -128,6 +127,7 @@ Resources:
   AnswerAnonFn:
     Type: AWS::Serverless::Function
     Properties:
+      CodeUri: backend/dist/
       Handler: handler.answerAnon
       Policies:
         - S3ReadPolicy: { BucketName: !Ref DataBucket }
@@ -139,6 +139,7 @@ Resources:
   AnswerScoredFn:
     Type: AWS::Serverless::Function
     Properties:
+      CodeUri: backend/dist/
       Handler: handler.answerScored
       Policies:
         - S3ReadPolicy: { BucketName: !Ref DataBucket }
@@ -152,6 +153,7 @@ Resources:
   MeFn:
     Type: AWS::Serverless::Function
     Properties:
+      CodeUri: backend/dist/
       Handler: handler.me
       Policies:
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
@@ -164,6 +166,7 @@ Resources:
   LeaderboardFn:
     Type: AWS::Serverless::Function
     Properties:
+      CodeUri: backend/dist/
       Handler: handler.leaderboard
       Policies:
         - DynamoDBReadPolicy: { TableName: !Ref UsersTable }
@@ -185,6 +188,7 @@ Resources:
   TodayFn:
     Type: AWS::Serverless::Function
     Properties:
+      CodeUri: backend/dist/
       Handler: handler.today
       Policies:
         - S3ReadPolicy: { BucketName: !Ref DataBucket }
