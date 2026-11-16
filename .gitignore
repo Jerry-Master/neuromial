@@ -12,3 +12,4 @@ questions/
 build/
 backend/dist/
 backend/src/data/
+client_secret_*.json

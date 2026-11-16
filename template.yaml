@@ -105,8 +105,8 @@ Resources:
       AllowedOAuthFlowsUserPoolClient: true
       AllowedOAuthFlows: [code]
       AllowedOAuthScopes: [openid, email, profile]
-      # Ref of the IdP is "<poolId>:Google"; using it creates the dependency on GoogleIdp
-      SupportedIdentityProviders: !If [HasGoogle, [COGNITO, !Select [1, !Split [':', !Ref GoogleIdp]]], [COGNITO]]
+      # the unused Ref only creates the dependency: client is created after the Google provider
+      SupportedIdentityProviders: !If [HasGoogle, [COGNITO, !Select [0, [Google, !Ref GoogleIdp]]], [COGNITO]]
       CallbackURLs:
         - http://localhost:5173/
         - !Sub ${SiteUrl}/
