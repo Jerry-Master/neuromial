@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+.aws/
+.aws-sam/
+*.csv
+*accessKeys*
+CLAUDE.md
+.DS_Store
