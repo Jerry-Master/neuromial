@@ -16,7 +16,7 @@ for f in google microsoft amazon email; do
 done
 
 rm -rf backend/dist
-(cd backend && npx esbuild src/handler.ts src/presignup.ts src/mail.ts --bundle --platform=node --target=node20 \
+(cd backend && npx esbuild src/handler.ts src/presignup.ts src/mail.ts --bundle --platform=node --target=node24\
   --format=esm --out-extension:.js=.mjs --outdir=dist --external:'@aws-sdk/*')
 node scripts/build-questions.mjs   # also writes backend/dist/data.json, bundled into the Lambda zip
 aws cloudformation package --template-file template.yaml --s3-bucket "$BUCKET" \

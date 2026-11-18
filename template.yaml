@@ -5,7 +5,7 @@ Description: neuromial daily neuroanatomy quiz
 Parameters:
   SiteUrl:
     Type: String
-    Default: https://jerry-master.github.io/neuromial
+    Default: https://neuromial.com
   GoogleClientId:
     Type: String
     Default: ''
@@ -48,7 +48,7 @@ Conditions:
 
 Globals:
   Function:
-    Runtime: nodejs20.x
+    Runtime: nodejs24.x
     Architectures: [arm64]
     Timeout: 10
     # more memory = more CPU: faster cold starts, still negligible cost at this traffic
@@ -226,7 +226,7 @@ Resources:
         ThrottlingBurstLimit: 20
         ThrottlingRateLimit: 10
       CorsConfiguration:
-        AllowOrigins: [https://jerry-master.github.io, 'http://localhost:5173']
+        AllowOrigins: [https://neuromial.com, https://www.neuromial.com, 'http://localhost:5173']
         AllowHeaders: [authorization, content-type]
         AllowMethods: [GET, POST, PUT, OPTIONS]
       Auth:

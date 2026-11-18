@@ -1,7 +1,7 @@
 export const API = import.meta.env.VITE_API_URL as string
 const COGNITO_DOMAIN = import.meta.env.VITE_COGNITO_DOMAIN as string
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID as string
-const BASE = import.meta.env.BASE_URL // '/neuromial/' on GitHub Pages
+const BASE = import.meta.env.BASE_URL // '/' on neuromial.com
 const REDIRECT = `${location.origin}${BASE}`
 
 // ---------- daily question (same rule as the backend) ----------
