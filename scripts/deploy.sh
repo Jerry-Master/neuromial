@@ -23,7 +23,7 @@ aws cloudformation package --template-file template.yaml --s3-bucket "$BUCKET" \
   --output-template-file build/packaged.yaml --profile $PROFILE >/dev/null
 aws cloudformation deploy --template-file build/packaged.yaml --stack-name neuromial \
   --capabilities CAPABILITY_IAM --profile $PROFILE --no-fail-on-empty-changeset \
-  --parameter-overrides "GoogleClientId=${GOOGLE_CLIENT_ID:-}" "GoogleClientSecret=${GOOGLE_CLIENT_SECRET:-}" \
+  --parameter-overrides "SiteUrl=https://neuromial.com" "GoogleClientId=${GOOGLE_CLIENT_ID:-}" "GoogleClientSecret=${GOOGLE_CLIENT_SECRET:-}" \
     "MicrosoftClientId=${MICROSOFT_CLIENT_ID:-}" "MicrosoftClientSecret=${MICROSOFT_CLIENT_SECRET:-}" \
     ${MICROSOFT_TENANT_ID:+"MicrosoftTenantId=$MICROSOFT_TENANT_ID"} \
     "AmazonClientId=${AMAZON_CLIENT_ID:-}" "AmazonClientSecret=${AMAZON_CLIENT_SECRET:-}" \
