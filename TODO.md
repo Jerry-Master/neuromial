@@ -51,9 +51,9 @@ Skipped on purpose: Apple ($99/year), Facebook (tedious app review), GitHub (nee
 2. Sign out, then sign in with Google (or Microsoft) using the same email. The first try may bounce once; the app retries automatically. Points and streak should be the same account.
 3. The reverse: sign up with Google first, then try a password sign-up with that email. It should be refused with "Sign in with Google instead".
 
-## 4. Daily email: DONE except production access
+## 4. Daily email: DONE
 Live since 2026-11-16: sender verified, `email.env` created, suppression list on (bounces + complaints), test email and unsubscribe confirmed.
-Remaining: AWS production access (support case 179486674200023, reply sent). Until approved, only verified addresses receive mail. Nothing to deploy after approval.
+SES production access approved (50,000/day, out of sandbox). Sends daily at 08:00 Europe/Madrid.
 The steps below are kept for reference.
 
 Free for 3,000 emails a month during the first 12 months, then about $0.10 per 1,000.

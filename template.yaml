@@ -261,7 +261,7 @@ Resources:
         UnsubGet: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /unsubscribe, Auth: { Authorizer: NONE } } }
         UnsubPost: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: POST, Path: /unsubscribe, Auth: { Authorizer: NONE } } }
 
-  # 07:00 UTC reminder to opted-in players who have not answered yet
+  # 08:00 Madrid reminder to opted-in players who have not answered yet
   DailyMailFn:
     Type: AWS::Serverless::Function
     Condition: HasEmail
@@ -282,7 +282,8 @@ Resources:
         Daily:
           Type: ScheduleV2
           Properties:
-            ScheduleExpression: cron(0 7 * * ? *)
+            ScheduleExpression: cron(0 8 * * ? *)
+            ScheduleExpressionTimezone: Europe/Madrid
 
   # ---------- private question bank (never public, read only by Lambdas) ----------
   DataBucket:

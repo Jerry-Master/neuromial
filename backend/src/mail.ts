@@ -55,6 +55,18 @@ export async function unsubscribe(event: APIGatewayProxyEventV2WithJWTAuthorizer
   const u = event.queryStringParameters?.u ?? ''
   const t = event.queryStringParameters?.t ?? ''
   const ok = !!SECRET && !!u && verify(u, t)
+  const page = (status: number, body: string): APIGatewayProxyResultV2 => ({
+    statusCode: status,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+    body: `<!doctype html><meta name="viewport" content="width=device-width"><body style="font:16px system-ui;max-width:32rem;margin:3rem auto;padding:0 1rem">
+${body}<p><a href="${SITE}/">Back to neuromial</a></p></body>`,
+  })
+  // GET only asks for confirmation: mail scanners prefetch links and must not unsubscribe anyone
+  if (event.requestContext.http.method === 'GET') {
+    if (!ok) return page(400, '<p>This unsubscribe link is not valid.</p>')
+    const action = `${API}/unsubscribe?u=${encodeURIComponent(u)}&amp;t=${encodeURIComponent(t)}`
+    return page(200, `<p>Unsubscribe from the neuromial daily email?</p><form method="post" action="${action}"><button type="submit">Unsubscribe</button></form>`)
+  }
   if (ok) {
     await db.send(
       new UpdateCommand({
@@ -66,14 +78,10 @@ export async function unsubscribe(event: APIGatewayProxyEventV2WithJWTAuthorizer
       }),
     ).catch(() => undefined)
   }
-  return {
-    statusCode: ok ? 200 : 400,
-    headers: { 'content-type': 'text/html; charset=utf-8' },
-    body: `<!doctype html><meta name="viewport" content="width=device-width"><body style="font:16px system-ui;max-width:32rem;margin:3rem auto;padding:0 1rem">
-<p>${ok ? 'You are unsubscribed from the neuromial daily email.' : 'This unsubscribe link is not valid.'}</p>
-<p><a href="${SITE}/">Back to neuromial</a></p></body>`,
-  }
+  return page(ok ? 200 : 400, `<p>${ok ? 'You are unsubscribed from the neuromial daily email.' : 'This unsubscribe link is not valid.'}</p>`)
 }
+
+const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
 // EventBridge schedule: email every opted-in player who has not answered today.
 export async function dailyMail(): Promise<{ sent: number }> {
@@ -108,6 +116,9 @@ export async function dailyMail(): Promise<{ sent: number }> {
                 Body: {
                   Text: {
                     Data: `Hi ${user.username ?? 'there'},\n\n${streak}Today's question: ${SITE}/\n\nOne question a day, about a minute.\n\nUnsubscribe: ${unsub}\n`,
+                  },
+                  Html: {
+                    Data: `<div style="font:16px system-ui;max-width:32rem;margin:0 auto"><p>Hi ${esc(String(user.username ?? 'there'))},</p>${streak ? `<p>${esc(streak.trim())}</p>` : ''}<p><a href="${SITE}/" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none">Answer today's question</a></p><p>One question a day, about a minute.</p><p style="color:#666;font-size:13px"><a href="${esc(unsub)}">Unsubscribe</a></p></div>`,
                   },
                 },
                 Headers: [
