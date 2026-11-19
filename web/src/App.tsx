@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
-import { HashRouter, Link, NavLink, Route, Routes, useNavigate } from 'react-router-dom'
+import { HashRouter, Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
   api, clearHistory, getToken, handleCallback, login, loadHistory, logout,
   saveResult, todayRequest, type Question, type Result,
 } from './lib'
+import { Crown, Eye, Filters, Flame, LogoMark, Sheet, Shade } from './art'
 
 function useLoggedIn() {
   const [state, setState] = useState<boolean | null>(null)
@@ -17,20 +18,47 @@ function Logo() {
   return <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={28} height={28} />
 }
 
+// One button, two states: signed out shows "Sign in" (closed eye), signed in shows "Sign out" (open eye).
+function AuthButton({ loggedIn }: { loggedIn: boolean | null }) {
+  if (loggedIn === null) return null
+  return (
+    <button className="grim" onClick={() => (loggedIn ? logout() : login())}>
+      <svg className="bg" aria-hidden="true">
+        <rect className="shape" x="1" y="1" width="100%" height="100%" filter="url(#burn5)" />
+      </svg>
+      <Eye open={loggedIn} />
+      <span>{loggedIn ? 'Sign out' : 'Sign in'}</span>
+    </button>
+  )
+}
+
 function Layout({ children }: { children: React.ReactNode }) {
   const loggedIn = useLoggedIn()
+  const home = useLocation().pathname === '/'
   return (
     <div className="app">
-      <header>
-        <div className="bar">
-          <Link to="/" className="brand"><Logo /> neuromial</Link>
+      <Filters />
+      {home ? (
+        // the brand lives in the hero on the front page, so the bar is just the links, centred
+        <header className="home">
           <nav>
             <NavLink to="/leaderboard">Leaderboard</NavLink>
-            {loggedIn === false && <button className="primary small" onClick={() => login()}>Sign in</button>}
-            {loggedIn && <><NavLink to="/me">Profile</NavLink><button className="ghost small" onClick={logout}>Sign out</button></>}
+            {loggedIn && <NavLink to="/me">Profile</NavLink>}
+            <AuthButton loggedIn={loggedIn} />
           </nav>
-        </div>
-      </header>
+        </header>
+      ) : (
+        <header>
+          <div className="bar">
+            <Link to="/" className="brand"><Logo /> neuromial</Link>
+            <nav>
+              <NavLink to="/leaderboard">Leaderboard</NavLink>
+              {loggedIn && <NavLink to="/me">Profile</NavLink>}
+              <AuthButton loggedIn={loggedIn} />
+            </nav>
+          </div>
+        </header>
+      )}
       <main>{children}</main>
     </div>
   )
@@ -101,7 +129,9 @@ function Today() {
   const [q, setQ] = useState<Question | null>(null)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState('')
-  const [pending, setPending] = useState<number | null>(null)
+  // Answering is two steps: pick an option (selected), then press Submit (submitting -> result).
+  const [selected, setSelected] = useState<number | null>(null)
+  const [submitting, setSubmitting] = useState(false)
   const [me, setMe] = useState<any>(null)
   const [copied, setCopied] = useState(false)
 
@@ -112,7 +142,11 @@ function Today() {
 
   // signed-in users get one scored attempt per day, so restore today's saved result
   useEffect(() => {
-    if (loggedIn && day) setResult(loadHistory()[day] ?? null)
+    if (loggedIn && day) {
+      const saved = loadHistory()[day] ?? null
+      setResult(saved)
+      if (saved) setSelected(saved.choice)
+    }
   }, [loggedIn, day])
 
   useEffect(() => {
@@ -125,9 +159,17 @@ function Today() {
       .catch(() => setError('Could not load today’s question.'))
   }, [])
 
-  const choose = useCallback(async (choice: number) => {
-    if (!q || result || pending !== null) return
-    setPending(choice) // highlight at once, reveal when the server answers
+  // choosing only highlights the option; nothing is sent until Submit
+  const select = useCallback((choice: number) => {
+    if (result || submitting) return
+    setSelected(choice)
+    setError('')
+  }, [result, submitting])
+
+  const submit = useCallback(async () => {
+    if (!q || selected === null || result || submitting) return
+    const choice = selected
+    setSubmitting(true)
     setError('')
     const scored = !!(await getToken())
     const { status, data } = await api<any>(
@@ -135,7 +177,7 @@ function Today() {
       { method: 'POST', body: JSON.stringify({ questionId: q.id, choice }) },
       scored,
     ).catch(() => ({ status: 0, data: {} as any }))
-    setPending(null)
+    setSubmitting(false)
     if (status === 200) {
       const r: Result = { ...data, choice }
       if (r.saved) {
@@ -151,18 +193,23 @@ function Today() {
     } else {
       setError('Something went wrong. Try again.')
     }
-  }, [q, result, pending, day])
+  }, [q, selected, result, submitting, day])
 
-  // keyboard: A-D or 1-4 picks an option
+  // keyboard: A-D or 1-4 picks an option, Enter submits
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.metaKey || e.ctrlKey || e.altKey || (e.target as HTMLElement).closest('input, textarea')) return
+      const t = e.target as HTMLElement
+      if (e.metaKey || e.ctrlKey || e.altKey || t.closest('input, textarea')) return
+      if (e.key === 'Enter') {
+        if (!t.closest('button, a')) submit() // on a focused button, Enter already clicks it
+        return
+      }
       const i = 'abcd'.indexOf(e.key.toLowerCase()) >= 0 ? 'abcd'.indexOf(e.key.toLowerCase()) : '1234'.indexOf(e.key)
-      if (i >= 0) choose(i)
+      if (i >= 0) select(i)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [choose])
+  }, [select, submit])
 
   async function share() {
     if (!result) return
@@ -189,36 +236,66 @@ function Today() {
       </section>
     )
   }
-  const pretty = day ? new Date(`${day}T00:00:00Z`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }) : ''
+  const pretty = day ? new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' }) : ''
+  const locked = !!result || submitting
+  // Submit has three looks: not ready (nothing picked), busy, and submitted
+  const submitState = result ? 'done' : submitting ? 'busy' : selected === null ? 'off' : 'ready'
+  const submitLabel = result ? 'Submitted' : submitting ? 'Submitting…' : 'Submit'
   return (
     <>
+      <div className="hero">
+        <LogoMark size={72} />
+        <h1 className="wordmark">neuromial</h1>
+        <p className="tagline">We publish one neuroanatomy question every day.</p>
+      </div>
       <div className="kicker">
         <span>{pretty}</span>
-        {q.difficulty && <span className={`pill ${q.difficulty}`}>{q.difficulty}</span>}
-        {loggedIn && me && <span className="streak" title="Streak">🔥 {me.streak}</span>}
+        {q.difficulty && (
+          <span className={`pill ${q.difficulty}`}>
+            <svg aria-hidden="true"><rect x="1" y="1" width="100%" height="100%" filter="url(#roughS)" /></svg>
+            <span>{q.difficulty}</span>
+          </span>
+        )}
+        {loggedIn && me && <span className="streak" title="Streak"><Flame size={18} /> {me.streak}</span>}
       </div>
-      <section className="card question">
+      <section className="question">
         <p className="eyebrow">Question of the day</p>
-        <h1>{q.prompt}</h1>
+        <h2 className="prompt">{q.prompt}</h2>
         <ul className="options">
           {q.options.map((o, i) => {
             let cls = ''
             if (result) cls = i === result.correctIndex ? 'right' : i === result.choice ? 'wrong' : 'dim'
-            else if (pending === i) cls = 'picked'
+            else if (selected === i) cls = 'sel'
+            const n = (i % 4) + 1
             return (
-              <li key={i}>
-                <button className={cls} disabled={!!result || pending !== null} onClick={() => choose(i)}
-                  aria-pressed={pending === i || result?.choice === i}>
-                  <span className="key">{'ABCD'[i]}</span>
-                  <span>{o}</span>
-                  {result && i === result.correctIndex && <span className="mark" aria-label="correct">✓</span>}
-                  {result && !result.correct && i === result.choice && <span className="mark" aria-label="your answer">✗</span>}
-                </button>
+              <li key={i} className={`opt ${cls} ${locked ? 'locked' : ''}`} style={{ transform: `rotate(${ROTATE[i % 4]}deg)` }}>
+                <Shade filter={`sh${n}`} />
+                <div className="face">
+                  <Sheet filter={`burn${n}`} />
+                  <button disabled={locked} onClick={() => select(i)} aria-pressed={selected === i}>
+                    <span className="key">
+                      <svg aria-hidden="true"><rect x="1" y="1" width="28" height="28" filter="url(#roughS)" /></svg>
+                      <span>{'ABCD'[i]}</span>
+                    </span>
+                    <span>{o}</span>
+                    {result && i === result.correctIndex && <span className="mark" aria-label="correct">✓</span>}
+                    {result && !result.correct && i === result.choice && <span className="mark" aria-label="your answer">✗</span>}
+                  </button>
+                </div>
               </li>
             )
           })}
         </ul>
-        {!result && <p className="hint center">Press A–D or tap an option.</p>}
+        <div className="submit-row">
+          <div className={`opt cta ${submitState}`} style={{ transform: 'rotate(-0.3deg)' }}>
+            <Shade filter="sh5" />
+            <div className="face">
+              <Sheet filter="burn5" />
+              <button type="button" disabled={submitState !== 'ready'} onClick={submit} aria-live="polite">{submitLabel}</button>
+            </div>
+          </div>
+        </div>
+        {!result && <p className="hint center">Choose with A–D or tap, then press Enter or Submit.</p>}
         {error && <p className="err" role="alert">{error}</p>}
       </section>
       {result && (
@@ -230,7 +307,7 @@ function Today() {
           <p>{result.explanation}</p>
           <div className="row">
             <button className="primary" onClick={share}>{copied ? 'Copied!' : 'Share result'}</button>
-            {!result.saved && <button className="ghost" onClick={() => setResult(null)}>Try again</button>}
+            {!result.saved && <button className="ghost" onClick={() => { setResult(null); setSelected(null) }}>Try again</button>}
           </div>
           {loggedIn === false && (
             <p className="nudge">
@@ -245,8 +322,12 @@ function Today() {
   )
 }
 
+// each answer sits a hair off-level, like pieces cut by hand
+const ROTATE = [-0.35, 0.3, -0.2, 0.4]
+
 type Row = { name: string; total: number; streak: number }
 
+// Used by both tabs (all time and this week): same rows, same bands.
 function Leaderboard() {
   const [period, setPeriod] = useState<'all' | 'week'>('all')
   const [rows, setRows] = useState<Row[] | null>(null)
@@ -269,13 +350,13 @@ function Leaderboard() {
       {!rows ? <div className="card skeleton" aria-busy="true" /> : rows.length === 0 ? (
         <p className="card">No scores yet. Be the first.</p>
       ) : (
-        <ol className="card board">
+        <ol className="bands board">
           {rows.map((r, i) => (
             <li key={r.name} className={r.name === mine ? 'me' : ''}>
-              <span className={`rank r${i + 1}`}>{i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1}</span>
+              <span className="rank">{i < 3 ? <Crown place={i} /> : i + 1}</span>
               <span className="name">{r.name}{r.name === mine && <em> (you)</em>}</span>
               <span className="score">{r.total} <small>pts</small></span>
-              <span className="flame">{r.streak > 0 ? `🔥${r.streak}` : ''}</span>
+              <span className="streakcell">{r.streak > 0 && <><Flame size={16} hole="var(--band)" />{r.streak}</>}</span>
             </li>
           ))}
         </ol>
@@ -326,18 +407,18 @@ function Profile() {
     <>
       <h1 className="page">{me.username ?? 'Your stats'}</h1>
       <div className="stats">
-        <div className="card stat"><b>{me.total}</b><span>points</span></div>
-        <div className="card stat"><b>🔥 {me.streak}</b><span>streak</span></div>
-        <div className="card stat"><b>{pct}%</b><span>{me.correctCount}/{me.answered} correct</span></div>
+        <div className="stat"><b>{me.total}</b><span>points</span></div>
+        <div className="stat"><b><Flame size={22} hole="var(--band-b)" /> {me.streak}</b><span>streak</span></div>
+        <div className="stat"><b>{pct}%</b><span>{me.correctCount}/{me.answered} correct</span></div>
       </div>
-      <section className="card">
+      <section className="plain">
         <UsernameForm current={me.username ?? undefined} onSaved={(u) => setMe({ ...me, username: u })} />
         <EmailToggle me={me} onChange={(v) => setMe({ ...me, emailOptIn: v })} />
       </section>
       {me.history.length > 0 && (
         <>
           <h2 className="section">History</h2>
-          <ul className="card board history">
+          <ul className="bands history">
             {me.history.map((h: any) => (
               <li key={h.day}>
                 <span>{h.day}</span>
