@@ -49,7 +49,7 @@ async function validate(event: Event) {
   }
   const result = checkAnswer(data.questions[questionId], choice!, parseLang(event.queryStringParameters?.lang))
   if (!result) return { ok: false as const, error: json(400, { error: 'unknown question' }) }
-  return { ok: true as const, today, questionId, choice: choice!, result }
+  return { ok: true as const, today, questionId, choice: choice!, result, difficulty: data.questions[questionId].difficulty }
 }
 
 // GET /today : public, today's question without answer or explanation
@@ -100,7 +100,7 @@ export async function answerScored(event: Event): Promise<APIGatewayProxyResultV
   const user = (await db.send(new GetCommand({ TableName: USERS, Key: { userId } }))).Item
   if (!user?.username) return json(403, { error: 'username required' })
   const streak = nextStreak(user?.lastDay, v.today, user?.streak ?? 0)
-  const points = pointsFor(v.result.correct, user?.lastDay === v.today - 1 ? user.streak : 0)
+  const points = pointsFor(v.result.correct, user?.lastDay === v.today - 1 ? user.streak : 0, v.difficulty)
 
   // one atomic write: record the answer (once per day) and update totals together
   try {

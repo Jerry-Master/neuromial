@@ -57,8 +57,10 @@ export function checkAnswer(q: Question | undefined, choice: number, lang: Lang 
   }
 }
 
-export function pointsFor(correct: boolean, streakBefore: number): number {
-  return correct ? 10 + Math.min(streakBefore, 5) : 0
+// base points by difficulty (unknown counts as easy), plus up to +5 for a running streak
+export const BASE_POINTS: Record<string, number> = { easy: 10, medium: 20, hard: 30 }
+export function pointsFor(correct: boolean, streakBefore: number, difficulty?: string): number {
+  return correct ? (BASE_POINTS[difficulty ?? ''] ?? BASE_POINTS.easy) + Math.min(streakBefore, 5) : 0
 }
 
 // streak counts consecutive days with an answer
