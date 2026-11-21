@@ -15,7 +15,7 @@ function useLoggedIn() {
 }
 
 function Logo() {
-  return <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={28} height={28} />
+  return <LogoMark size={30} />
 }
 
 // One button, two states: signed out shows "Sign in" (closed eye), signed in shows "Sign out" (open eye).
@@ -244,7 +244,7 @@ function Today() {
   return (
     <>
       <div className="hero">
-        <LogoMark size={72} />
+        <LogoMark size={84} />
         <h1 className="wordmark">neuromial</h1>
         <p className="tagline">We publish one neuroanatomy question every day.</p>
       </div>
