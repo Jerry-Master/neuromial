@@ -7,7 +7,22 @@ export type Question = {
   tags: string[]
   answer: number
   explanation: string
+  difficulty?: string
+  feedback?: string[]
+  references?: Reference[]
+  es?: { prompt?: string; options?: string[]; explanation?: string; feedback?: string[] }
 }
+export type Reference = { title: string; url: string }
+export type Lang = 'en' | 'es'
+export type CheckResult = {
+  correct: boolean
+  correctIndex: number
+  explanation: string
+  feedback: string[] | null
+  references: Reference[]
+}
+
+export const parseLang = (v: unknown): Lang => (v === 'es' ? 'es' : 'en')
 export type Data = { order: string[]; questions: Record<string, Question> }
 
 export function epochDay(now: number = Date.now()): number {
@@ -23,16 +38,23 @@ export function questionIdForDay(data: Data, day: number): string {
   return data.order[((day % n) + n) % n]
 }
 
-// what the client may see before answering: no answer, no explanation
-export function publicQuestion(data: Data, id: string) {
-  const { answer: _a, explanation: _e, ...visible } = data.questions[id]
-  return { id, ...visible }
+// what the client may see before answering: no answer, no explanation. Missing es fields fall back to EN.
+export function publicQuestion(q: Question, lang: Lang = 'en') {
+  const l = lang === 'es' ? q.es : undefined
+  const options = l?.options?.length === 4 ? l.options : q.options
+  return { type: q.type, prompt: l?.prompt || q.prompt, options, difficulty: q.difficulty, tags: q.tags ?? [] }
 }
 
-export function checkAnswer(data: Data, questionId: string, choice: number) {
-  const q = data.questions[questionId]
+export function checkAnswer(q: Question | undefined, choice: number, lang: Lang = 'en'): CheckResult | null {
   if (!q) return null
-  return { correct: choice === q.answer, correctIndex: q.answer, explanation: q.explanation }
+  const l = lang === 'es' ? q.es : undefined
+  return {
+    correct: choice === q.answer,
+    correctIndex: q.answer,
+    explanation: l?.explanation || q.explanation,
+    feedback: (l?.feedback?.length === 4 ? l.feedback : q.feedback) ?? null,
+    references: q.references ?? [],
+  }
 }
 
 export function pointsFor(correct: boolean, streakBefore: number): number {

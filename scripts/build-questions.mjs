@@ -15,6 +15,23 @@ for (const q of list) {
   if (!(q.answer >= 0 && q.answer <= 3)) throw new Error(`${q.id}: bad answer index`)
   if (!['easy', 'medium', 'hard'].includes(q.difficulty)) throw new Error(`${q.id}: difficulty must be easy|medium|hard`)
   if (!['model', 'human', false].includes(q.reviewed)) throw new Error(`${q.id}: reviewed must be 'model', 'human' or false`)
+  const str = (v) => typeof v === 'string' && v.trim() !== ''
+  const fb = (v, w) => {
+    if (v !== undefined && !(Array.isArray(v) && v.length === 4 && v.every(str))) throw new Error(`${q.id}: ${w} must be 4 non-empty strings`)
+  }
+  fb(q.feedback, 'feedback')
+  if (q.references !== undefined) {
+    if (!Array.isArray(q.references)) throw new Error(`${q.id}: references must be an array`)
+    for (const r of q.references) {
+      if (!str(r?.title) || !str(r?.url) || !r.url.startsWith('https://')) throw new Error(`${q.id}: reference needs title and https url`)
+    }
+  }
+  if (q.es !== undefined) {
+    const e = q.es
+    if (!e || !str(e.prompt) || !str(e.explanation)) throw new Error(`${q.id}: es needs prompt and explanation`)
+    if (!Array.isArray(e.options) || e.options.length !== 4 || !e.options.every(str)) throw new Error(`${q.id}: es.options need 4 strings`)
+    fb(e.feedback, 'es.feedback')
+  }
   const { id, reviewed: _r, source: _s, ...rest } = q
   questions[id] = rest
 }

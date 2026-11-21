@@ -256,6 +256,8 @@ Resources:
         Me: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /me, Auth: { Authorizer: Jwt } } }
         SetUsername: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: PUT, Path: /me/username, Auth: { Authorizer: Jwt } } }
         SetEmail: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: PUT, Path: /me/email, Auth: { Authorizer: Jwt } } }
+        SetLang: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: PUT, Path: /me/lang, Auth: { Authorizer: Jwt } } }
+        MeToday: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /me/today, Auth: { Authorizer: Jwt } } }
         Leaderboard: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /leaderboard, Auth: { Authorizer: NONE } } }
         Report: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: POST, Path: /report, Auth: { Authorizer: NONE } } }
         UnsubGet: { Type: HttpApi, Properties: { ApiId: !Ref Api, Method: GET, Path: /unsubscribe, Auth: { Authorizer: NONE } } }

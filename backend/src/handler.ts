@@ -8,9 +8,9 @@ import {
   ScanCommand,
   TransactWriteCommand,
 } from '@aws-sdk/lib-dynamodb'
-import { checkAnswer, dayString, epochDay, nextStreak, pointsFor, publicQuestion, questionIdForDay } from './logic.ts'
+import { checkAnswer, dayString, epochDay, nextStreak, parseLang, pointsFor, publicQuestion, questionIdForDay } from './logic.ts'
 import { getData } from './data.ts'
-import { emailEnabled, setEmailOptIn, unsubscribe } from './mail.ts'
+import { emailEnabled, setEmailOptIn, setLang, unsubscribe } from './mail.ts'
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}))
 const USERS = process.env.USERS_TABLE!
@@ -47,18 +47,38 @@ async function validate(event: Event) {
   if (questionId !== questionIdForDay(data, today)) {
     return { ok: false as const, error: json(409, { error: 'not today’s question' }) }
   }
-  const result = checkAnswer(data, questionId, choice!)
+  const result = checkAnswer(data.questions[questionId], choice!, parseLang(event.queryStringParameters?.lang))
   if (!result) return { ok: false as const, error: json(400, { error: 'unknown question' }) }
   return { ok: true as const, today, questionId, choice: choice!, result }
 }
 
 // GET /today : public, today's question without answer or explanation
-export async function today(): Promise<APIGatewayProxyResultV2> {
+export async function today(event?: Event): Promise<APIGatewayProxyResultV2> {
   const data = await getData()
   const day = epochDay()
+  const id = questionIdForDay(data, day)
+  const lang = parseLang(event?.queryStringParameters?.lang)
   return {
-    ...(json(200, { day: dayString(day), question: publicQuestion(data, questionIdForDay(data, day)) }) as object),
+    ...(json(200, { day: dayString(day), question: { id, ...publicQuestion(data.questions[id], lang) } }) as object),
     headers: { 'content-type': 'application/json', 'cache-control': 'public, max-age=300' },
+  }
+}
+
+// GET /me/today : JWT required (the public /today route has no authorizer, so no claims there).
+// Same body as /today plus `previous` when the user already answered today.
+export async function todayMe(event: Event): Promise<APIGatewayProxyResultV2> {
+  const data = await getData()
+  const day = epochDay()
+  const id = questionIdForDay(data, day)
+  const lang = parseLang(event.queryStringParameters?.lang)
+  const userId = String(event.requestContext.authorizer.jwt.claims.sub)
+  const q = data.questions[id]
+  const row = (await db.send(new GetCommand({ TableName: ANSWERS, Key: { userId, day: dayString(day) } }))).Item
+  const result = row ? checkAnswer(q, row.choice, lang) : null
+  const previous = row && result ? { choice: row.choice, correct: row.correct, points: row.points, result } : undefined
+  return {
+    ...(json(200, { day: dayString(day), question: { id, ...publicQuestion(q, lang) }, ...(previous ? { previous } : {}) }) as object),
+    headers: { 'content-type': 'application/json', 'cache-control': 'private, no-store' },
   }
 }
 
@@ -116,8 +136,11 @@ export async function answerScored(event: Event): Promise<APIGatewayProxyResultV
     )
   } catch (e: any) {
     if (e.name === 'TransactionCanceledException') {
+      const data = await getData()
       const prev = (await db.send(new GetCommand({ TableName: ANSWERS, Key: { userId, day } }))).Item
-      return json(409, { error: 'already answered', previous: prev })
+      const result = prev ? checkAnswer(data.questions[v.questionId], prev.choice, parseLang(event.queryStringParameters?.lang)) : null
+      if (!result) return json(409, { error: 'already answered' })
+      return json(409, { error: 'already answered', previous: prev ? { choice: prev.choice, correct: prev.correct, points: prev.points, result } : undefined })
     }
     throw e
   }
@@ -148,6 +171,7 @@ export async function me(event: Event): Promise<APIGatewayProxyResultV2> {
     correctCount: user.Item?.correctCount ?? 0,
     emailAvailable: emailEnabled(),
     emailOptIn: user.Item?.emailOptIn === true,
+    lang: user.Item?.lang === 'es' || user.Item?.lang === 'en' ? user.Item.lang : null,
     answeredToday: history.Items?.some((i) => i.day === today) ?? false,
     history: history.Items ?? [],
   })
@@ -280,6 +304,8 @@ const routes: Record<string, (e: Event) => Promise<APIGatewayProxyResultV2>> = {
   'POST /answer': answerAnon,
   'POST /answer/scored': answerScored,
   'GET /me': me,
+  'GET /me/today': todayMe,
+  'PUT /me/lang': setLang,
   'PUT /me/username': setUsername,
   'GET /leaderboard': leaderboard,
   'POST /report': report,

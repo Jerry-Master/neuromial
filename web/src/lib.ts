@@ -1,3 +1,4 @@
+import { getLang } from './i18n'
 export const API = import.meta.env.VITE_API_URL as string
 const COGNITO_DOMAIN = import.meta.env.VITE_COGNITO_DOMAIN as string
 const CLIENT_ID = import.meta.env.VITE_CLIENT_ID as string
@@ -10,31 +11,39 @@ export const todayEpoch = () => Math.floor(Date.now() / DAY_MS)
 export const dayString = (d: number) => new Date(d * DAY_MS).toISOString().slice(0, 10)
 
 export type Question = { id: string; type: string; prompt: string; options: string[]; tags: string[]; difficulty?: 'easy' | 'medium' | 'hard' }
-export type Result = { correct: boolean; correctIndex: number; explanation: string; points: number; saved: boolean; choice: number; streak?: number }
+export type Ref = { title: string; url: string }
+export type Result = {
+  correct: boolean; correctIndex: number; explanation: string; points: number; saved: boolean; choice: number; streak?: number
+  feedback?: string[] | null; references?: Ref[]
+}
+export type Previous = { choice: number; correct: boolean; points: number; result: Omit<Result, 'choice' | 'points' | 'saved'> }
+export const fromPrevious = (p: Previous): Result => ({ ...p.result, choice: p.choice, points: p.points, saved: true })
 
 // ---------- local history (anonymous play) ----------
 const HIST = 'neuromial:history'
-export function loadHistory(): Record<string, Result> {
+export type Stored = { choice: number; correct: boolean; points: number }
+export function loadHistory(): Record<string, Stored> {
   try {
     return JSON.parse(localStorage.getItem(HIST) ?? '{}')
   } catch {
     return {}
   }
 }
-export function saveResult(day: string, r: Result) {
+export function saveResult(day: string, r: Stored) {
   try {
-    localStorage.setItem(HIST, JSON.stringify({ ...loadHistory(), [day]: r }))
+    const { choice, correct, points } = r
+    localStorage.setItem(HIST, JSON.stringify({ ...loadHistory(), [day]: { choice, correct, points } }))
   } catch {
     /* storage unavailable: result just isn't remembered */
   }
 }
-export function clearHistory() {
-  try {
-    localStorage.removeItem(HIST)
-  } catch {
-    /* ignore */
-  }
+// re-fetch the localized explanation for a stored choice (anonymous, nothing is saved server side)
+export async function localizeResult(questionId: string, s: Stored): Promise<Result | null> {
+  const { status, data } = await api<any>('/answer', { method: 'POST', body: JSON.stringify({ questionId, choice: s.choice }) }).catch(() => ({ status: 0, data: null as any }))
+  if (status !== 200 || !data) return null
+  return { ...data, choice: s.choice, correct: s.correct, points: s.points, saved: false }
 }
+
 // ---------- auth: Cognito hosted UI, authorization code + PKCE ----------
 const TOK = 'neuromial:tokens'
 type Tokens = { id_token: string; refresh_token?: string; exp: number }
@@ -104,7 +113,6 @@ function logoutLocal(): null {
 
 export function logout() {
   logoutLocal()
-  clearHistory() // forget saved answers so the next visitor on this browser starts fresh
   location.href = `https://${COGNITO_DOMAIN}/logout?client_id=${CLIENT_ID}&logout_uri=${encodeURIComponent(location.origin + BASE)}`
 }
 
@@ -115,9 +123,11 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = false)
     const tok = await getToken()
     if (tok) headers.authorization = tok
   }
-  const res = await fetch(`${API}${path}`, { ...init, headers })
+  const url = `${path}${path.includes('?') ? '&' : '?'}lang=${getLang()}`
+  const res = await fetch(`${API}${url}`, { ...init, headers })
   return { status: res.status, data: await res.json().catch(() => ({}) as T) }
 }
 
 // fetched as soon as the script loads, before React renders
-export const todayRequest = api<{ day: string; question: Question }>('/today')
+export const todayRequest = api<{ day: string; question: Question; previous?: Previous }>('/today')
+export const prefetchedLang = getLang()

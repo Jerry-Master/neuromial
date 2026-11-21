@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { epochDay } from './logic.ts'
+import { epochDay, parseLang, type Lang } from './logic.ts'
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}))
 const USERS = process.env.USERS_TABLE!
@@ -19,6 +19,37 @@ function verify(userId: string, token: string) {
   const b = Buffer.from(token)
   return a.length === b.length && timingSafeEqual(a, b)
 }
+
+export const COPY = {
+  en: {
+    subject: 'Today’s neuroanatomy question is ready',
+    hi: (n: string) => `Hi ${n},`,
+    anon: 'there',
+    streak: (n: number) => `Your streak is ${n}. Keep it going.`,
+    today: 'Today\'s question',
+    cta: 'Answer today\'s question',
+    tagline: 'One question a day, about a minute.',
+    unsub: 'Unsubscribe',
+    back: 'Back to neuromial',
+    confirm: 'Unsubscribe from the neuromial daily email?',
+    done: 'You are unsubscribed from the neuromial daily email.',
+    invalid: 'This unsubscribe link is not valid.',
+  },
+  es: {
+    subject: 'Ya está lista la pregunta de neuroanatomía de hoy',
+    hi: (n: string) => `Hola ${n},`,
+    anon: 'ahí',
+    streak: (n: number) => `Llevas una racha de ${n}. ¡Sigue así!`,
+    today: 'La pregunta de hoy',
+    cta: 'Responder la pregunta de hoy',
+    tagline: 'Una pregunta al día, en un minuto.',
+    unsub: 'Darse de baja',
+    back: 'Volver a neuromial',
+    confirm: '¿Darte de baja del correo diario de neuromial?',
+    done: 'Te has dado de baja del correo diario de neuromial.',
+    invalid: 'Este enlace de baja no es válido.',
+  },
+} satisfies Record<Lang, Record<string, unknown>>
 
 const json = (statusCode: number, body: unknown): APIGatewayProxyResultV2 => ({
   statusCode,
@@ -50,22 +81,44 @@ export async function setEmailOptIn(event: APIGatewayProxyEventV2WithJWTAuthoriz
   return json(200, { emailOptIn: optIn })
 }
 
+// PUT /me/lang : JWT required. Body { lang: 'en' | 'es' }.
+export async function setLang(event: APIGatewayProxyEventV2WithJWTAuthorizer): Promise<APIGatewayProxyResultV2> {
+  let lang: unknown
+  try {
+    lang = JSON.parse(event.body ?? '{}').lang
+  } catch {
+    lang = undefined
+  }
+  if (lang !== 'en' && lang !== 'es') return json(400, { error: 'bad request' })
+  await db.send(
+    new UpdateCommand({
+      TableName: USERS,
+      Key: { userId: String(event.requestContext.authorizer.jwt.claims.sub) },
+      UpdateExpression: 'SET lang = :l',
+      ExpressionAttributeValues: { ':l': lang },
+    }),
+  )
+  return json(200, { ok: true })
+}
+
 // GET or POST /unsubscribe?u=<userId>&t=<hmac> : public, one click, no login (RFC 8058)
 export async function unsubscribe(event: APIGatewayProxyEventV2WithJWTAuthorizer): Promise<APIGatewayProxyResultV2> {
   const u = event.queryStringParameters?.u ?? ''
   const t = event.queryStringParameters?.t ?? ''
   const ok = !!SECRET && !!u && verify(u, t)
+  const lang = parseLang(event.queryStringParameters?.lang)
+  const c = COPY[lang]
   const page = (status: number, body: string): APIGatewayProxyResultV2 => ({
     statusCode: status,
     headers: { 'content-type': 'text/html; charset=utf-8' },
-    body: `<!doctype html><meta name="viewport" content="width=device-width"><body style="font:16px system-ui;max-width:32rem;margin:3rem auto;padding:0 1rem">
-${body}<p><a href="${SITE}/">Back to neuromial</a></p></body>`,
+    body: `<!doctype html><meta name="viewport" content="width=device-width"><html lang="${lang}"><body style="font:16px system-ui;max-width:32rem;margin:3rem auto;padding:0 1rem">
+${body}<p><a href="${SITE}/">${c.back}</a></p></body>`,
   })
   // GET only asks for confirmation: mail scanners prefetch links and must not unsubscribe anyone
   if (event.requestContext.http.method === 'GET') {
-    if (!ok) return page(400, '<p>This unsubscribe link is not valid.</p>')
-    const action = `${API}/unsubscribe?u=${encodeURIComponent(u)}&amp;t=${encodeURIComponent(t)}`
-    return page(200, `<p>Unsubscribe from the neuromial daily email?</p><form method="post" action="${action}"><button type="submit">Unsubscribe</button></form>`)
+    if (!ok) return page(400, `<p>${c.invalid}</p>`)
+    const action = `${API}/unsubscribe?u=${encodeURIComponent(u)}&amp;t=${encodeURIComponent(t)}&amp;lang=${lang}`
+    return page(200, `<p>${c.confirm}</p><form method="post" action="${action}"><button type="submit">${c.unsub}</button></form>`)
   }
   if (ok) {
     await db.send(
@@ -78,7 +131,7 @@ ${body}<p><a href="${SITE}/">Back to neuromial</a></p></body>`,
       }),
     ).catch(() => undefined)
   }
-  return page(ok ? 200 : 400, `<p>${ok ? 'You are unsubscribed from the neuromial daily email.' : 'This unsubscribe link is not valid.'}</p>`)
+  return page(ok ? 200 : 400, `<p>${ok ? c.done : c.invalid}</p>`)
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -103,8 +156,11 @@ export async function dailyMail(): Promise<{ sent: number }> {
     )
     for (const user of page.Items ?? []) {
       if (!user.email || user.lastDay === today) continue
-      const unsub = `${API}/unsubscribe?u=${encodeURIComponent(user.userId)}&t=${sign(user.userId)}`
-      const streak = user.lastDay === today - 1 && user.streak ? `Your streak is ${user.streak}. Keep it going.\n\n` : ''
+      const lang = parseLang(user.lang)
+      const c = COPY[lang]
+      const unsub = `${API}/unsubscribe?u=${encodeURIComponent(user.userId)}&t=${sign(user.userId)}&lang=${lang}`
+      const name = String(user.username ?? c.anon)
+      const streak = user.lastDay === today - 1 && user.streak ? `${c.streak(user.streak)}\n\n` : ''
       try {
         await ses.send(
           new SendEmailCommand({
@@ -112,13 +168,13 @@ export async function dailyMail(): Promise<{ sent: number }> {
             Destination: { ToAddresses: [user.email] },
             Content: {
               Simple: {
-                Subject: { Data: 'Today’s neuroanatomy question is ready' },
+                Subject: { Data: c.subject },
                 Body: {
                   Text: {
-                    Data: `Hi ${user.username ?? 'there'},\n\n${streak}Today's question: ${SITE}/\n\nOne question a day, about a minute.\n\nUnsubscribe: ${unsub}\n`,
+                    Data: `${c.hi(name)}\n\n${streak}${c.today}: ${SITE}/\n\n${c.tagline}\n\n${c.unsub}: ${unsub}\n`,
                   },
                   Html: {
-                    Data: `<div style="font:16px system-ui;max-width:32rem;margin:0 auto"><p>Hi ${esc(String(user.username ?? 'there'))},</p>${streak ? `<p>${esc(streak.trim())}</p>` : ''}<p><a href="${SITE}/" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none">Answer today's question</a></p><p>One question a day, about a minute.</p><p style="color:#666;font-size:13px"><a href="${esc(unsub)}">Unsubscribe</a></p></div>`,
+                    Data: `<div lang="${lang}" style="font:16px system-ui;max-width:32rem;margin:0 auto"><p>${esc(c.hi(name))}</p>${streak ? `<p>${esc(streak.trim())}</p>` : ''}<p><a href="${SITE}/" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none">${esc(c.cta)}</a></p><p>${esc(c.tagline)}</p><p style="color:#666;font-size:13px"><a href="${esc(unsub)}">${esc(c.unsub)}</a></p></div>`,
                   },
                 },
                 Headers: [
