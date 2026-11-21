@@ -53,7 +53,7 @@ export async function handler(event: PreSignUpTriggerEvent): Promise<PreSignUpTr
     const social = (await usersWithEmail(event.userPoolId, email)).find((u) => u.UserStatus === 'EXTERNAL_PROVIDER')
     if (social) {
       const prefix = (social.Username ?? '').split('_')[0].toLowerCase()
-      const provider = PROVIDERS.find((p) => p.toLowerCase() === prefix)? ?? 'your social account'
+      const provider = PROVIDERS.find((p) => p.toLowerCase() === prefix) ?? 'your social account'
       throw new Error(`This email already has an account. Sign in with ${provider} instead.`)
     }
   }
