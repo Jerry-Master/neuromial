@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
-  api, fromPrevious, getToken, handleCallback, login, logout,
+  api, apiRetry, fromPrevious, getToken, handleCallback, login, logout,
   hasStoredSession, localizeResult, todayRequest, prefetchedLang, type Previous, type Question, type Result,
 } from './lib'
 import {
@@ -301,8 +301,7 @@ function Today() {
     const req =
       !loggedIn && !usedPrefetch.current && prefetchedLang === lang
         ? todayRequest
-        : api<{ day: string; question: Question; previous?: Previous }>(loggedIn ? '/me/today' : '/today', {}, loggedIn)
-            .catch(() => api<{ day: string; question: Question; previous?: Previous }>(loggedIn ? '/me/today' : '/today', {}, loggedIn)) // one quiet retry
+        : apiRetry<{ day: string; question: Question; previous?: Previous }>(loggedIn ? '/me/today' : '/today', loggedIn)
     usedPrefetch.current = true
     req
       .then((r) => {

@@ -122,6 +122,19 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = false)
   }
 }
 
+// GET with up to 3 tries and a short pause: covers a cold start, a flaky mobile connection or a 5xx blip
+export async function apiRetry<T>(path: string, auth = false, tries = 3): Promise<{ status: number; data: T }> {
+  for (let i = 1; ; i++) {
+    try {
+      const r = await api<T>(path, {}, auth)
+      if (r.status < 500 || i >= tries) return r
+    } catch (e) {
+      if (i >= tries) throw e
+    }
+    await new Promise((ok) => setTimeout(ok, 700 * i))
+  }
+}
+
 // fetched as soon as the script loads, before React renders
-export const todayRequest = api<{ day: string; question: Question; previous?: Previous }>('/today')
+export const todayRequest = apiRetry<{ day: string; question: Question; previous?: Previous }>('/today')
 export const prefetchedLang = getLang()
