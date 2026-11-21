@@ -2,7 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto'
 import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 } from 'aws-lambda'
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb'
 import { DynamoDBDocumentClient, ScanCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb'
-import { epochDay, parseLang, type Lang } from './logic.ts'
+import { epochDay, parseLang, publicQuestion, questionIdForDay, type Lang } from './logic.ts'
+import { getData } from './data.ts'
 
 const db = DynamoDBDocumentClient.from(new DynamoDBClient({}))
 const USERS = process.env.USERS_TABLE!
@@ -27,7 +28,8 @@ export const COPY = {
     anon: 'there',
     streak: (n: number) => `Your streak is ${n}. Keep it going.`,
     today: 'Today\'s question',
-    cta: 'Answer today\'s question',
+    cta: 'Open today\'s question',
+    pick: 'Tap your answer. It opens already selected.',
     tagline: 'One question a day, about a minute.',
     unsub: 'Unsubscribe',
     back: 'Back to neuromial',
@@ -41,7 +43,8 @@ export const COPY = {
     anon: 'ahí',
     streak: (n: number) => `Llevas una racha de ${n}. ¡Sigue así!`,
     today: 'La pregunta de hoy',
-    cta: 'Responder la pregunta de hoy',
+    cta: 'Abrir la pregunta de hoy',
+    pick: 'Toca tu respuesta. Se abre ya seleccionada.',
     tagline: 'Una pregunta al día, en un minuto.',
     unsub: 'Darse de baja',
     back: 'Volver a neuromial',
@@ -136,12 +139,32 @@ ${body}<p><a href="${SITE}/">${c.back}</a></p></body>`,
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
+const LETTERS = 'ABCD'
+
+// Email body: the question, each option a link to the site with that option preselected (/?a=<index>).
+export function renderMail(o: { lang: Lang; name: string; streak: string; q: { prompt: string; options: string[] }; unsub: string }) {
+  const c = COPY[o.lang]
+  const link = (i: number) => `${SITE}/?a=${i}`
+  const text = `${c.hi(o.name)}\n\n${o.streak ? `${o.streak}\n\n` : ''}${o.q.prompt}\n\n${o.q.options
+    .map((x, i) => `${LETTERS[i]}) ${x}\n   ${link(i)}`)
+    .join('\n')}\n\n${c.tagline}\n\n${c.unsub}: ${o.unsub}\n`
+  const opts = o.q.options
+    .map(
+      (x, i) =>
+        `<a href="${esc(link(i))}" style="display:block;margin:0 0 8px;padding:12px 14px;border:1px solid #d1d5db;border-radius:10px;color:#111827;text-decoration:none"><b style="color:#2563eb">${LETTERS[i]}</b>&nbsp; ${esc(x)}</a>`,
+    )
+    .join('')
+  const html = `<div lang="${o.lang}" style="font:16px/1.5 system-ui,sans-serif;max-width:32rem;margin:0 auto;color:#111827"><p>${esc(c.hi(o.name))}</p>${o.streak ? `<p>${esc(o.streak)}</p>` : ''}<p style="color:#6b7280;font-size:13px;margin-bottom:4px">${esc(c.today)}</p><p style="font-size:18px;font-weight:600;margin-top:0">${esc(o.q.prompt)}</p>${opts}<p style="color:#6b7280;font-size:13px">${esc(c.pick)}</p><p><a href="${SITE}/" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none">${esc(c.cta)}</a></p><p style="color:#6b7280;font-size:13px">${esc(c.tagline)} · <a href="${esc(o.unsub)}" style="color:#6b7280">${esc(c.unsub)}</a></p></div>`
+  return { text, html }
+}
+
 // EventBridge schedule: email every opted-in player who has not answered today.
 export async function dailyMail(): Promise<{ sent: number }> {
   if (!emailEnabled()) return { sent: 0 }
   // loaded here, not at the top, so the API function's cold start skips the SES client
   const { SESv2Client, SendEmailCommand } = await import('@aws-sdk/client-sesv2')
   const ses = new SESv2Client({})
+  const data = await getData()
   const today = epochDay()
   let sent = 0
   let start: Record<string, unknown> | undefined
@@ -160,7 +183,9 @@ export async function dailyMail(): Promise<{ sent: number }> {
       const c = COPY[lang]
       const unsub = `${API}/unsubscribe?u=${encodeURIComponent(user.userId)}&t=${sign(user.userId)}&lang=${lang}`
       const name = String(user.username ?? c.anon)
-      const streak = user.lastDay === today - 1 && user.streak ? `${c.streak(user.streak)}\n\n` : ''
+      const streak = user.lastDay === today - 1 && user.streak ? c.streak(user.streak) : ''
+      const q = publicQuestion(data.questions[questionIdForDay(data, today)], lang)
+      const { text, html } = renderMail({ lang, name, streak, q, unsub })
       try {
         await ses.send(
           new SendEmailCommand({
@@ -169,14 +194,7 @@ export async function dailyMail(): Promise<{ sent: number }> {
             Content: {
               Simple: {
                 Subject: { Data: c.subject },
-                Body: {
-                  Text: {
-                    Data: `${c.hi(name)}\n\n${streak}${c.today}: ${SITE}/\n\n${c.tagline}\n\n${c.unsub}: ${unsub}\n`,
-                  },
-                  Html: {
-                    Data: `<div lang="${lang}" style="font:16px system-ui;max-width:32rem;margin:0 auto"><p>${esc(c.hi(name))}</p>${streak ? `<p>${esc(streak.trim())}</p>` : ''}<p><a href="${SITE}/" style="display:inline-block;padding:10px 18px;background:#2563eb;color:#fff;border-radius:8px;text-decoration:none">${esc(c.cta)}</a></p><p>${esc(c.tagline)}</p><p style="color:#666;font-size:13px"><a href="${esc(unsub)}">${esc(c.unsub)}</a></p></div>`,
-                  },
-                },
+                Body: { Text: { Data: text }, Html: { Data: html } },
                 Headers: [
                   { Name: 'List-Unsubscribe', Value: `<${unsub}>` },
                   { Name: 'List-Unsubscribe-Post', Value: 'List-Unsubscribe=One-Click' },

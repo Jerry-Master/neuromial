@@ -163,6 +163,16 @@ function ReportForm({ questionId }: { questionId: string }) {
 
 const SITE = `${location.origin}${import.meta.env.BASE_URL}`
 
+// Reminder email links to /?a=<0-3>: preselect that option (never submit it), then drop the param.
+let emailPick: number | null = (() => {
+  const a = new URLSearchParams(location.search).get('a')
+  if (a === null) return null
+  const u = new URL(location.href)
+  u.searchParams.delete('a')
+  history.replaceState(null, '', u.pathname + u.search + u.hash)
+  return /^[0-3]$/.test(a) ? Number(a) : null
+})()
+
 const Ico = ({ d }: { d: string }) => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><path d={d} /></svg>
 )
@@ -309,7 +319,8 @@ function Today() {
         } else if (loadedAs.current !== !!loggedIn) {
           // auth changed (or first load): reset. A mere language change keeps the answer.
           setResult(null)
-          setSelected(null)
+          setSelected(emailPick)
+          emailPick = null
         }
         if (loadedAs.current !== !!loggedIn) {
           setPractice(null)
