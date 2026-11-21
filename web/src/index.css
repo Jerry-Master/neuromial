@@ -273,7 +273,7 @@ header nav > * { flex: none; }
 .langsw button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* per-option feedback, references, practice badge, share panel */
-.optfb { position: relative; margin: 0; padding: 2px 24px 26px 52px; font-size: .9rem; line-height: 1.45; color: var(--toast-ink); overflow-wrap: anywhere; min-width: 0; }
+.optfb { position: relative; margin: 0; padding: 2px 24px 26px 52px; font-size: .9rem; line-height: 1.45; color: var(--fg); overflow-wrap: anywhere; min-width: 0; }
 .opt.dim .optfb { opacity: .8; }
 .refs { margin-top: var(--s3); }
 .refs ul { margin: var(--s1) 0 0; padding-left: 1.2em; }

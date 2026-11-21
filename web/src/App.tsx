@@ -247,6 +247,9 @@ function Loading({ failed, onRetry }: { failed: string; onRetry: () => void }) {
   )
 }
 
+// keyboard hint only where a physical keyboard is likely: fine pointer + hover (not phones/tablets)
+const hasKeyboard = typeof matchMedia === 'function' && matchMedia('(hover: hover) and (pointer: fine)').matches
+
 function Today() {
   const loggedIn = useLoggedIn()
   const { t, err, lang, locale, setLang } = useT()
@@ -493,7 +496,7 @@ function Today() {
             </div>
           </div>
         </div>
-        {!shown && <p className="hint center">{t('pressHint')}</p>}
+        {!shown && <p className="hint center">{t(hasKeyboard ? 'pressHint' : 'tapHint')}</p>}
         {error && <p className="err" role="alert">{error}</p>}
       </section>
       {shown && (
