@@ -263,6 +263,7 @@ function Today() {
   const questionId = q?.id
   const usedPrefetch = useRef(false)
   const [attempt, setAttempt] = useState(0)
+  const loadedAs = useRef<boolean | null>(null) // auth state the current answer state belongs to
 
   useEffect(() => {
     if (!loggedIn) return
@@ -302,16 +303,31 @@ function Today() {
           const p = fromPrevious(r.data.previous)
           setResult(p)
           setSelected(p.choice)
-        } else {
+        } else if (loadedAs.current !== !!loggedIn) {
+          // auth changed (or first load): reset. A mere language change keeps the answer.
           setResult(null)
           setSelected(null)
         }
-        setPractice(null)
-        setPracticing(false)
+        if (loadedAs.current !== !!loggedIn) {
+          setPractice(null)
+          setPracticing(false)
+        }
+        loadedAs.current = !!loggedIn
       })
       .catch(() => live && setError(t('loadFail')))
     return () => { live = false }
   }, [loggedIn, lang, t, attempt])
+
+  // anonymous result: re-localize explanation/feedback on language switch, keeping the answer
+  const resultChoice = result && !result.saved ? result.choice : undefined
+  useEffect(() => {
+    if (resultChoice === undefined || !questionId) return
+    let live = true
+    localizeResult(questionId, { choice: resultChoice, correct: false, points: 0 }).then((r) => {
+      if (live && r) setResult((p) => (p && p.choice === resultChoice ? { ...r, correct: p.correct, points: p.points, saved: false } : p))
+    })
+    return () => { live = false }
+  }, [lang, resultChoice, questionId])
 
   // practice result: re-localize on language switch
   const practiceChoice = practice?.choice
@@ -440,7 +456,7 @@ function Today() {
             if (shown) cls = i === shown.correctIndex ? 'right' : i === shown.choice ? 'wrong' : 'dim'
             else if (selected === i) cls = 'sel'
             const n = (i % 4) + 1
-            const fb = shown?.feedback?.[i]
+            const fb = shown && (i === shown.correctIndex || i === shown.choice) ? shown.feedback?.[i] : null
             return (
               <li key={i} className={`opt ${cls} ${locked ? 'locked' : ''}`} style={{ transform: `rotate(${ROTATE[i % 4]}deg)` }}>
                 <Shade filter={`sh${n}`} />

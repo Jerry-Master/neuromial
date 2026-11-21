@@ -99,7 +99,7 @@ h2.section { font-size: 1rem; color: var(--muted); margin: var(--s6) 0 var(--s3)
 .opt .key rect { fill: color-mix(in srgb, var(--accent) 16%, transparent); transition: fill .15s; }
 .opt .key span { position: relative; }
 .opt button > span:not(.key):not(.mark) { min-width: 0; overflow-wrap: anywhere; }
-.opt .mark { margin-left: auto; font-weight: 700; }
+.opt .mark { margin-left: auto; margin-right: 10px; font-weight: 700; }
 
 .opt.sel .face, .opt.right .face, .opt.wrong .face, .opt.done .face { transform: translate(6px, 6px); }
 .opt.sel .paper { fill: color-mix(in srgb, var(--accent) 12%, var(--paper)); }
@@ -273,7 +273,7 @@ header nav > * { flex: none; }
 .langsw button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* per-option feedback, references, practice badge, share panel */
-.optfb { position: relative; margin: 0; padding: 2px 24px 20px 52px; font-size: .9rem; line-height: 1.45; color: var(--toast-ink); overflow-wrap: anywhere; min-width: 0; }
+.optfb { position: relative; margin: 0; padding: 2px 24px 26px 52px; font-size: .9rem; line-height: 1.45; color: var(--toast-ink); overflow-wrap: anywhere; min-width: 0; }
 .opt.dim .optfb { opacity: .8; }
 .refs { margin-top: var(--s3); }
 .refs ul { margin: var(--s1) 0 0; padding-left: 1.2em; }
