@@ -547,7 +547,7 @@ function Today() {
             <div className="glow" aria-hidden="true" />
             {loggedIn === false && (
               <p>
-                {t('anon1')} <button className="link" onClick={() => login()}>{t('nav.signIn')}</button> {t('anon2')}
+                {t('anon1')} <button className="link" onClick={() => login()}>{t('anon.signIn')}</button> {t('anon2')}
               </p>
             )}
             <div className="more"><ReportForm questionId={q.id} /></div>
