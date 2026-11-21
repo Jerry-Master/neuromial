@@ -13,24 +13,6 @@ Parameters:
     Type: String
     Default: ''
     NoEcho: true
-  # Microsoft personal accounts ("consumers" tenant). Use your tenant id for work/school accounts.
-  MicrosoftTenantId:
-    Type: String
-    Default: 9188040d-6c67-4c5b-b112-36a304b66dad
-  MicrosoftClientId:
-    Type: String
-    Default: ''
-  MicrosoftClientSecret:
-    Type: String
-    Default: ''
-    NoEcho: true
-  AmazonClientId:
-    Type: String
-    Default: ''
-  AmazonClientSecret:
-    Type: String
-    Default: ''
-    NoEcho: true
   # daily email: set both to enable (the sender must be verified in SES)
   SenderEmail:
     Type: String
@@ -42,8 +24,6 @@ Parameters:
 
 Conditions:
   HasGoogle: !Not [!Equals [!Ref GoogleClientId, '']]
-  HasMicrosoft: !Not [!Equals [!Ref MicrosoftClientId, '']]
-  HasAmazon: !Not [!Equals [!Ref AmazonClientId, '']]
   HasEmail: !And [!Not [!Equals [!Ref SenderEmail, '']], !Not [!Equals [!Ref EmailSecret, '']]]
 
 Globals:
@@ -165,38 +145,6 @@ Resources:
         email: email
         name: name
 
-  MicrosoftIdp:
-    Type: AWS::Cognito::UserPoolIdentityProvider
-    Condition: HasMicrosoft
-    Properties:
-      UserPoolId: !Ref UserPool
-      ProviderName: Microsoft
-      ProviderType: OIDC
-      ProviderDetails:
-        client_id: !Ref MicrosoftClientId
-        client_secret: !Ref MicrosoftClientSecret
-        attributes_request_method: GET
-        oidc_issuer: !Sub https://login.microsoftonline.com/${MicrosoftTenantId}/v2.0
-        authorize_scopes: openid email profile
-      AttributeMapping:
-        email: email
-        name: name
-
-  AmazonIdp:
-    Type: AWS::Cognito::UserPoolIdentityProvider
-    Condition: HasAmazon
-    Properties:
-      UserPoolId: !Ref UserPool
-      ProviderName: LoginWithAmazon
-      ProviderType: LoginWithAmazon
-      ProviderDetails:
-        client_id: !Ref AmazonClientId
-        client_secret: !Ref AmazonClientSecret
-        authorize_scopes: profile
-      AttributeMapping:
-        email: email
-        name: name
-
   UserPoolClient:
     Type: AWS::Cognito::UserPoolClient
     Properties:
@@ -209,8 +157,6 @@ Resources:
       SupportedIdentityProviders:
         - COGNITO
         - !If [HasGoogle, !Select [0, [Google, !Ref GoogleIdp]], !Ref AWS::NoValue]
-        - !If [HasMicrosoft, !Select [0, [Microsoft, !Ref MicrosoftIdp]], !Ref AWS::NoValue]
-        - !If [HasAmazon, !Select [0, [LoginWithAmazon, !Ref AmazonIdp]], !Ref AWS::NoValue]
       CallbackURLs:
         - http://localhost:5173/
         - !Sub ${SiteUrl}/

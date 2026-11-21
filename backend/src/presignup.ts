@@ -6,7 +6,7 @@ import {
 import type { PreSignUpTriggerEvent } from 'aws-lambda'
 
 const cognito = new CognitoIdentityProviderClient({})
-const PROVIDERS = ['Google', 'Microsoft', 'LoginWithAmazon', 'Facebook']
+const PROVIDERS = ['Google', 'Facebook']
 
 async function usersWithEmail(poolId: string, email: string) {
   const res = await cognito.send(
@@ -16,7 +16,7 @@ async function usersWithEmail(poolId: string, email: string) {
 }
 
 // Cognito pre-sign-up trigger. One person = one account, whatever the sign-in method:
-// - first sign-in with Google/Microsoft/... whose verified email already has a password account:
+// - first sign-in with Google/... whose verified email already has a password account:
 //   link it to that account, so points and streak are shared.
 // - password sign-up with an email that already belongs to a social account: refuse with a hint.
 export async function handler(event: PreSignUpTriggerEvent): Promise<PreSignUpTriggerEvent> {
@@ -24,7 +24,7 @@ export async function handler(event: PreSignUpTriggerEvent): Promise<PreSignUpTr
   if (!email) return event
 
   if (event.triggerSource === 'PreSignUp_ExternalProvider') {
-    // userName looks like "Google_1234567890" or "Microsoft_abc"
+    // userName looks like "Google_1234567890"
     const cut = event.userName.indexOf('_')
     const prefix = event.userName.slice(0, cut).toLowerCase()
     // Cognito may lowercase the prefix; linking needs the provider name exactly as configured
@@ -53,7 +53,7 @@ export async function handler(event: PreSignUpTriggerEvent): Promise<PreSignUpTr
     const social = (await usersWithEmail(event.userPoolId, email)).find((u) => u.UserStatus === 'EXTERNAL_PROVIDER')
     if (social) {
       const prefix = (social.Username ?? '').split('_')[0].toLowerCase()
-      const provider = PROVIDERS.find((p) => p.toLowerCase() === prefix)?.replace('LoginWithAmazon', 'Amazon') ?? 'your social account'
+      const provider = PROVIDERS.find((p) => p.toLowerCase() === prefix)? ?? 'your social account'
       throw new Error(`This email already has an account. Sign in with ${provider} instead.`)
     }
   }
