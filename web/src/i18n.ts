@@ -74,12 +74,12 @@ const en = {
 }
 type Key = keyof typeof en
 const es: Record<Key, string> = {
-  'nav.leaderboard': 'Clasificación', 'nav.profile': 'Perfil', 'nav.signIn': 'Entrar', 'nav.signOut': 'Salir',
+  'nav.leaderboard': 'Ranking', 'nav.profile': 'Perfil', 'nav.signIn': 'Entrar', 'nav.signOut': 'Salir',
   'lang.label': 'Idioma', 'lang.en': 'English', 'lang.es': 'Español',
   'signingIn': 'Iniciando sesión…',
   'username': 'Nombre de usuario', 'usernamePh': 'usuario', 'change': 'Cambiar', 'save': 'Guardar',
-  'usernameHint': '3-20 letras, números o guiones bajos. Se muestra en la clasificación. Debe ser único.',
-  'pickUsername': 'Elige un nombre de usuario', 'pickUsernameBody': 'Es el nombre que se muestra en la clasificación.',
+  'usernameHint': '3-20 letras, números o guiones bajos. Se muestra en el ranking. Debe ser único.',
+  'pickUsername': 'Elige un nombre de usuario', 'pickUsernameBody': 'Es el nombre que se muestra en el ranking.',
   'report.thanks': 'Gracias, revisaremos esta pregunta.', 'report.open': 'Informar de un problema con esta pregunta',
   'report.what': '¿Qué falla?', 'report.ph': 'p. ej. la opción B también es correcta porque…', 'report.send': 'Enviar',
   'cancel': 'Cancelar', 'report.fail': 'No se pudo enviar. Inténtalo de nuevo.',
@@ -95,10 +95,10 @@ const es: Record<Key, string> = {
   'tryAgain': 'Inténtalo de nuevo', 'practiceBadge': 'Práctica — sin puntos',
   'backToResult': 'Volver a mi resultado',
   'comeBack': 'Vuelve mañana (00:00 UTC) para una nueva pregunta.',
-  'anon1': 'Estás jugando de forma anónima.', 'anon2': 'para ganar puntos, mantener una racha y entrar en la clasificación.',
+  'anon1': 'Estás jugando de forma anónima.', 'anon2': 'para ganar puntos, mantener una racha y entrar en el ranking.',
   'learnMore': 'Saber más', 'yourChoice': 'Tu respuesta', 'correctOpt': 'Respuesta correcta',
   'share.title': 'Compartir resultado', 'share.native': 'Compartir…', 'share.copy': 'Copiar', 'share.copied': '¡Copiado!',
-  'lb.title': 'Clasificación', 'lb.all': 'Histórico', 'lb.week': 'Esta semana', 'lb.empty': 'Aún no hay puntuaciones. Sé el primero.',
+  'lb.title': 'Ranking', 'lb.all': 'Histórico', 'lb.week': 'Esta semana', 'lb.empty': 'Aún no hay puntuaciones. Sé el primero.',
   'you': 'tú', 'pts': 'pts',
   'email.label': 'Correo diario', 'email.hint': 'Un breve recordatorio a las 08:00 (Madrid) si aún no has respondido.',
   'saveFail': 'No se pudo guardar.', 'usernameSaveFail': 'No se pudo guardar el nombre de usuario.',
