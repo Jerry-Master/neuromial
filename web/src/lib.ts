@@ -19,24 +19,12 @@ export type Result = {
 export type Previous = { choice: number; correct: boolean; points: number; result: Omit<Result, 'choice' | 'points' | 'saved'> }
 export const fromPrevious = (p: Previous): Result => ({ ...p.result, choice: p.choice, points: p.points, saved: true })
 
-// ---------- local history (anonymous play) ----------
-const HIST = 'neuromial:history'
+// ---------- anonymous play: answers are never persisted ----------
 export type Stored = { choice: number; correct: boolean; points: number }
-export function loadHistory(): Record<string, Stored> {
-  try {
-    return JSON.parse(localStorage.getItem(HIST) ?? '{}')
-  } catch {
-    return {}
-  }
-}
-export function saveResult(day: string, r: Stored) {
-  try {
-    const { choice, correct, points } = r
-    localStorage.setItem(HIST, JSON.stringify({ ...loadHistory(), [day]: { choice, correct, points } }))
-  } catch {
-    /* storage unavailable: result just isn't remembered */
-  }
-}
+// drop answers saved by older versions
+try { localStorage.removeItem('neuromial:history') } catch { /* ignore */ }
+export const hasStoredSession = () => { try { return !!localStorage.getItem('neuromial:tokens') } catch { return false } }
+
 // re-fetch the localized explanation for a stored choice (anonymous, nothing is saved server side)
 export async function localizeResult(questionId: string, s: Stored): Promise<Result | null> {
   const { status, data } = await api<any>('/answer', { method: 'POST', body: JSON.stringify({ questionId, choice: s.choice }) }).catch(() => ({ status: 0, data: null as any }))
@@ -124,8 +112,14 @@ export async function api<T>(path: string, init: RequestInit = {}, auth = false)
     if (tok) headers.authorization = tok
   }
   const url = `${path}${path.includes('?') ? '&' : '?'}lang=${getLang()}`
-  const res = await fetch(`${API}${url}`, { ...init, headers })
-  return { status: res.status, data: await res.json().catch(() => ({}) as T) }
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), 15_000)
+  try {
+    const res = await fetch(`${API}${url}`, { ...init, headers, signal: ctl.signal })
+    return { status: res.status, data: await res.json().catch(() => ({}) as T) }
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // fetched as soon as the script loads, before React renders

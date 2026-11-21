@@ -98,6 +98,7 @@ h2.section { font-size: 1rem; color: var(--muted); margin: var(--s6) 0 var(--s3)
 .opt .key svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .opt .key rect { fill: color-mix(in srgb, var(--accent) 16%, transparent); transition: fill .15s; }
 .opt .key span { position: relative; }
+.opt button > span:not(.key):not(.mark) { min-width: 0; overflow-wrap: anywhere; }
 .opt .mark { margin-left: auto; font-weight: 700; }
 
 .opt.sel .face, .opt.right .face, .opt.wrong .face, .opt.done .face { transform: translate(6px, 6px); }
@@ -145,7 +146,7 @@ h2.section { font-size: 1rem; color: var(--muted); margin: var(--s6) 0 var(--s3)
   mask-composite: intersect; }
 .result .glow { background: radial-gradient(60% 70% at 14% 0%, color-mix(in srgb, var(--tone) 16%, transparent), transparent 70%),
   radial-gradient(50% 60% at 92% 100%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 70%), var(--card); }
-.result .inner { position: relative; padding: 0 28px; }
+.result .inner { position: relative; padding: 0 28px; overflow-wrap: anywhere; }
 .result p { margin: 14px 0 18px; }
 .result .row { gap: 22px; }
 .result .hint { margin: var(--s4) 0 0; }
@@ -244,6 +245,23 @@ input, textarea { font: inherit; padding: 10px 12px; border-radius: 10px; border
   header nav a { padding: 8px 6px; }
   .bands li { padding-inline: var(--s4); }
 }
+/* ---------- loading ---------- */
+.loading { display: grid; justify-items: center; gap: var(--s3); min-height: 280px; align-content: center; text-align: center; color: var(--muted); }
+.loading p { margin: 0; }
+.spinner { width: 34px; height: 34px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--accent) 22%, transparent); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---------- stable nav: no wrapping, fixed height, label widths reserved for EN and ES ---------- */
+header nav { flex-wrap: nowrap; min-height: 60px; }
+header nav > * { flex: none; }
+.grim { min-width: 112px; justify-content: center; white-space: nowrap; }
+@media (max-width: 480px) {
+  header nav { gap: 2px; }
+  header.home nav { flex-wrap: nowrap; }
+  .grim { min-width: 96px; padding: 9px 12px 9px 10px; font-size: .8rem; gap: 6px; }
+  .langsw button { min-width: 30px; padding: 4px 6px; }
+}
+@media (max-width: 360px) { header nav a { padding: 8px 4px; font-size: .85rem; } }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
@@ -255,7 +273,7 @@ input, textarea { font: inherit; padding: 10px 12px; border-radius: 10px; border
 .langsw button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* per-option feedback, references, practice badge, share panel */
-.optfb { position: relative; margin: 0; padding: 0 16px 12px 52px; font-size: .9rem; color: var(--toast-ink); }
+.optfb { position: relative; margin: 0; padding: 2px 24px 20px 52px; font-size: .9rem; line-height: 1.45; color: var(--toast-ink); overflow-wrap: anywhere; min-width: 0; }
 .opt.dim .optfb { opacity: .8; }
 .refs { margin-top: var(--s3); }
 .refs ul { margin: var(--s1) 0 0; padding-left: 1.2em; }

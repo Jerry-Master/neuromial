@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { HashRouter, Link, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import {
-  api, fromPrevious, getToken, handleCallback, login, loadHistory, logout,
-  saveResult, localizeResult, todayRequest, prefetchedLang, type Previous, type Question, type Result,
+  api, fromPrevious, getToken, handleCallback, login, logout,
+  hasStoredSession, localizeResult, todayRequest, prefetchedLang, type Previous, type Question, type Result,
 } from './lib'
 import {
   I18nCtx, getLang, makeErr, makeT, setCurrentLang, storeLang, useT, type Lang,
@@ -10,7 +10,8 @@ import {
 import { Crown, Eye, Filters, Flame, LogoMark, Sheet, Shade } from './art'
 
 function useLoggedIn() {
-  const [state, setState] = useState<boolean | null>(null)
+  // optimistic from the stored session so the first paint (nav, requests) is already right; verified async
+  const [state, setState] = useState<boolean | null>(() => hasStoredSession())
   useEffect(() => {
     getToken().then((t) => setState(!!t))
   }, [])
@@ -223,6 +224,29 @@ function SharePanel({ text }: { text: string }) {
   )
 }
 
+function Loading({ failed, onRetry }: { failed: string; onRetry: () => void }) {
+  const { t } = useT()
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const id = setTimeout(() => setSlow(true), 3500)
+    return () => clearTimeout(id)
+  }, [])
+  if (failed) {
+    return (
+      <div className="loading" role="alert">
+        <p className="err">{failed}</p>
+        <button type="button" className="underline" onClick={onRetry}>{t('retry')}</button>
+      </div>
+    )
+  }
+  return (
+    <div className="loading" role="status" aria-live="polite">
+      <span className="spinner" aria-hidden="true" />
+      <p>{slow ? t('loadingSlow') : t('loading')}</p>
+    </div>
+  )
+}
+
 function Today() {
   const loggedIn = useLoggedIn()
   const { t, err, lang, locale, setLang } = useT()
@@ -238,6 +262,7 @@ function Today() {
   const [me, setMe] = useState<any>(null)
   const questionId = q?.id
   const usedPrefetch = useRef(false)
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     if (!loggedIn) return
@@ -263,6 +288,7 @@ function Today() {
       !loggedIn && !usedPrefetch.current && prefetchedLang === lang
         ? todayRequest
         : api<{ day: string; question: Question; previous?: Previous }>(loggedIn ? '/me/today' : '/today', {}, loggedIn)
+            .catch(() => api<{ day: string; question: Question; previous?: Previous }>(loggedIn ? '/me/today' : '/today', {}, loggedIn)) // one quiet retry
     usedPrefetch.current = true
     req
       .then((r) => {
@@ -271,28 +297,21 @@ function Today() {
         setDay(r.data.day)
         setQ(r.data.question)
         setError('')
+        // anonymous: always clean. signed in: restore their saved answer, or start clean and let them score.
         if (loggedIn && r.data.previous) {
           const p = fromPrevious(r.data.previous)
           setResult(p)
           setSelected(p.choice)
+        } else {
+          setResult(null)
+          setSelected(null)
         }
+        setPractice(null)
+        setPracticing(false)
       })
       .catch(() => live && setError(t('loadFail')))
     return () => { live = false }
-  }, [loggedIn, lang, t])
-
-  // signed out: restore today's locally stored choice and re-fetch the localized result (also on language change)
-  useEffect(() => {
-    if (loggedIn !== false || !day || !questionId) return
-    const saved = loadHistory()[day]
-    if (!saved) { setResult(null); return }
-    setSelected(saved.choice)
-    let live = true
-    localizeResult(questionId, saved).then((r) => {
-      if (live) setResult(r ?? { correct: saved.correct, correctIndex: saved.choice, explanation: '', points: saved.points, saved: false, choice: saved.choice })
-    })
-    return () => { live = false }
-  }, [loggedIn, day, questionId, lang])
+  }, [loggedIn, lang, t, attempt])
 
   // practice result: re-localize on language switch
   const practiceChoice = practice?.choice
@@ -338,7 +357,6 @@ function Today() {
       if (practicing) setPractice(r)
       else {
         if (r.saved) setMe((m: any) => (m ? { ...m, streak: r.streak ?? m.streak } : m))
-        else saveResult(day, r)
         setResult(r)
       }
     } else if (status === 403) {
@@ -382,7 +400,7 @@ function Today() {
     return () => window.removeEventListener('keydown', onKey)
   }, [select, submit])
 
-  if (!q) return error ? <p className="err">{error}</p> : <div className="card skeleton" aria-busy="true" />
+  if (!q) return <Loading failed={error} onRetry={() => { setError(''); usedPrefetch.current = true; setAttempt((n) => n + 1) }} />
   if (loggedIn && me && !me.username) {
     return (
       <section className="card">
