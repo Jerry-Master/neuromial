@@ -31,7 +31,7 @@ function Shadow({ id, region, ...warp }: Warp & { id: string; region: Region }) 
   )
 }
 
-// Burnt paper: ragged edge, a charred rim, a wider scorched band that fades inward, and brown grain.
+// Burnt paper: ragged edge, a charred rim, a wider scorched band that fades inward, and violet grain.
 function Burn({ id, region, seed, freq, scale, blur = 4, brown = 0.85, char = 1 }: Warp & { id: string; region: Region; blur?: number; brown?: number; char?: number }) {
   return (
     <filter id={id} {...region}>
@@ -45,12 +45,12 @@ function Burn({ id, region, seed, freq, scale, blur = 4, brown = 0.85, char = 1 
       <feDisplacementMap in="er2" in2="n2" scale={16} xChannelSelector="G" yChannelSelector="B" result="d2" />
       <feGaussianBlur in="d2" stdDeviation={blur} result="b2" />
       <feComposite in="s" in2="b2" operator="out" result="edge2" />
-      <feFlood floodColor="#8c5a2b" floodOpacity={brown} result="brown" />
+      <feFlood style={{ floodColor: 'var(--scorch)' }} floodOpacity={brown} result="brown" />
       <feComposite in="brown" in2="edge2" operator="in" result="brownEdge" />
-      <feFlood floodColor="#1f1109" floodOpacity={char} result="char" />
+      <feFlood style={{ floodColor: 'var(--char)' }} floodOpacity={char} result="char" />
       <feComposite in="char" in2="edge1" operator="in" result="charEdge" />
       <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves={2} seed={seed + 10} result="g" />
-      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.35 0 0 0 0 0.25 0 0 0 0 0.12 1.3 0 0 0 -0.5" result="gc" />
+      <feColorMatrix in="g" type="matrix" values="0 0 0 0 0.3 0 0 0 0 0.2 0 0 0 0 0.38 1.3 0 0 0 -0.5" result="gc" />
       <feComposite in="gc" in2="s" operator="in" result="gm" />
       <feMerge>
         <feMergeNode in="s" />

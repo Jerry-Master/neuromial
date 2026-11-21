@@ -90,6 +90,21 @@ function UsernameForm({ current, onSaved }: { current?: string; onSaved: (name: 
   )
 }
 
+// Small toasted-paper button (Share, Send): offset shadow plus a scorched sheet, like Submit but smaller.
+function Chip({ small, children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { small?: boolean }) {
+  return (
+    <div className={`chip${small ? ' small' : ''}`}>
+      <svg className="shade" aria-hidden="true">
+        <rect className="shadow" x="5" y="5" width="100%" height="100%" filter="url(#sh5)" />
+      </svg>
+      <div className="face">
+        <Sheet filter="burn5" />
+        <button {...props}>{children}</button>
+      </div>
+    </div>
+  )
+}
+
 function shareText(day: string, r: Result, streak?: number) {
   const squares = ['⬜', '⬜', '⬜', '⬜']
   squares[r.correctIndex] = '🟩'
@@ -102,7 +117,7 @@ function ReportForm({ questionId }: { questionId: string }) {
   const [note, setNote] = useState('')
   const [state, setState] = useState<'idle' | 'busy' | 'sent' | 'error'>('idle')
   if (state === 'sent') return <p className="hint">Thanks, we will check this question.</p>
-  if (!open) return <button className="link" onClick={() => setOpen(true)}>Report a problem with this question</button>
+  if (!open) return <button className="link muted" onClick={() => setOpen(true)}>Report a problem with this question</button>
   async function send(e: React.FormEvent) {
     e.preventDefault()
     setState('busy')
@@ -115,8 +130,8 @@ function ReportForm({ questionId }: { questionId: string }) {
       <textarea id="note" value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} rows={3} required autoFocus
         placeholder="e.g. option B is also correct because…" />
       <div className="row">
-        <button className="primary small" disabled={state === 'busy' || !note.trim()}>Send</button>
-        <button type="button" className="ghost small" onClick={() => setOpen(false)}>Cancel</button>
+        <Chip small disabled={state === 'busy' || !note.trim()}>Send</Chip>
+        <button type="button" className="quiet" onClick={() => setOpen(false)}>Cancel</button>
       </div>
       {state === 'error' && <p className="err">Could not send. Try again.</p>}
     </form>
@@ -295,28 +310,41 @@ function Today() {
             </div>
           </div>
         </div>
-        {!result && <p className="hint center">Choose with A–D or tap, then press Enter or Submit.</p>}
+        {!result && <p className="hint center">Press A–D or tap an option.</p>}
         {error && <p className="err" role="alert">{error}</p>}
       </section>
       {result && (
-        <section className={`card explain ${result.correct ? 'ok' : 'bad'}`} aria-live="polite">
-          <div className="verdict">
-            <h2>{result.correct ? 'Correct!' : 'Not quite.'}</h2>
-            {result.saved && result.points > 0 && <span className="burst">+{result.points}</span>}
-          </div>
-          <p>{result.explanation}</p>
-          <div className="row">
-            <button className="primary" onClick={share}>{copied ? 'Copied!' : 'Share result'}</button>
-            {!result.saved && <button className="ghost" onClick={() => { setResult(null); setSelected(null) }}>Try again</button>}
-          </div>
-          {loggedIn === false && (
-            <p className="nudge">
-              Playing anonymously. <button className="link" onClick={() => login()}>Sign in</button> to earn points, keep a streak and join the leaderboard.
-            </p>
-          )}
-          {result.saved && <p className="hint">Come back tomorrow (00:00 UTC) for a new question.</p>}
-          <ReportForm questionId={q.id} />
-        </section>
+        <>
+          <section className={`result ${result.correct ? 'ok' : 'bad'}`} aria-live="polite">
+            <div className="glow" aria-hidden="true" />
+            <div className="inner">
+              <div className="verdict">
+                <span className="vicon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d={result.correct ? 'M4 12.5 9.5 18 20 6.5' : 'M6 6l12 12M18 6 6 18'} />
+                  </svg>
+                </span>
+                <h2>{result.correct ? 'Correct!' : 'Not quite.'}</h2>
+                {result.saved && result.points > 0 && <span className="burst">+{result.points}</span>}
+              </div>
+              <p>{result.explanation}</p>
+              <div className="row">
+                <Chip type="button" onClick={share}>{copied ? 'Copied!' : 'Share result'}</Chip>
+                {!result.saved && <button type="button" className="underline" onClick={() => { setResult(null); setSelected(null) }}>Try again</button>}
+              </div>
+              {result.saved && <p className="hint">Come back tomorrow (00:00 UTC) for a new question.</p>}
+            </div>
+          </section>
+          <section className="aside">
+            <div className="glow" aria-hidden="true" />
+            {loggedIn === false && (
+              <p>
+                Playing anonymously. <button className="link" onClick={() => login()}>Sign in</button> to earn points, keep a streak and join the leaderboard.
+              </p>
+            )}
+            <div className="more"><ReportForm questionId={q.id} /></div>
+          </section>
+        </>
       )}
     </>
   )
