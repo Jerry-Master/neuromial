@@ -720,6 +720,8 @@ export default function App() {
   }, [lang])
   useEffect(() => {
     document.documentElement.lang = lang
+    document.title = lang === 'es' ? 'neuromial · neuroanatomía diaria' : 'neuromial · daily neuroanatomy'
+    document.querySelector('meta[name=description]')?.setAttribute('content', lang === 'es' ? 'Una pregunta de neuroanatomía al día. Mantén tu racha y sube en la clasificación.' : 'One neuroanatomy question a day. Keep your streak, climb the leaderboard.')
   }, [lang])
   return (
     <I18nCtx.Provider value={i18n}>

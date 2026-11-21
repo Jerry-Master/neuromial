@@ -3,17 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>neuromial · daily neuroanatomy</title>
-    <meta name="description" content="One neuroanatomy question a day. Keep your streak, climb the leaderboard." />
+    <title>neuromial · neuroanatomía diaria / daily neuroanatomy</title>
+    <meta name="description" content="Una pregunta de neuroanatomía al día. / One neuroanatomy question a day." />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="neuromial" />
-    <meta property="og:title" content="neuromial · daily neuroanatomy" />
-    <meta property="og:description" content="One neuroanatomy question a day. Keep your streak, climb the leaderboard." />
+    <meta property="og:title" content="neuromial · neuroanatomía diaria / daily neuroanatomy" />
+    <meta property="og:description" content="Una pregunta de neuroanatomía al día. / One neuroanatomy question a day." />
     <meta property="og:url" content="https://neuromial.com/" />
     <meta property="og:image" content="https://neuromial.com/icon-512.png" />
     <meta name="twitter:card" content="summary" />
-    <meta name="twitter:title" content="neuromial · daily neuroanatomy" />
-    <meta name="twitter:description" content="One neuroanatomy question a day. Keep your streak, climb the leaderboard." />
+    <meta name="twitter:title" content="neuromial · neuroanatomía diaria / daily neuroanatomy" />
+    <meta name="twitter:description" content="Una pregunta de neuroanatomía al día. / One neuroanatomy question a day." />
     <meta name="twitter:image" content="https://neuromial.com/icon-512.png" />
     <link rel="icon" href="%BASE_URL%favicon.ico" sizes="32x32" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
@@ -24,7 +24,19 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet" />
-      <script>try{var l=localStorage.getItem('neuromial:lang');if(l==='es'||l==='en')document.documentElement.lang=l}catch(e){}</script>
+    <script>
+      // link previews (WhatsApp etc.) never run JS, so the static tags above are bilingual; the live tab is localized here
+      try {
+        var l = localStorage.getItem('neuromial:lang')
+        if (l !== 'es' && l !== 'en') {
+          var f = (navigator.languages && navigator.languages.length ? navigator.languages : [navigator.language]).filter(function (x) { return /^(es|en)/i.test(x) })[0]
+          l = f && /^es/i.test(f) ? 'es' : 'en'
+        }
+        document.documentElement.lang = l
+        document.title = l === 'es' ? 'neuromial · neuroanatomía diaria' : 'neuromial · daily neuroanatomy'
+        document.querySelector('meta[name=description]').content = l === 'es' ? 'Una pregunta de neuroanatomía al día. Mantén tu racha y sube en la clasificación.' : 'One neuroanatomy question a day. Keep your streak, climb the leaderboard.'
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>
